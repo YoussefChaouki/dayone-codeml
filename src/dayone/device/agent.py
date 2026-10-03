@@ -110,7 +110,7 @@ class Agent:
 
     # Buttons bound to the record (and field) on screen when they were offered: an old button
     # (WhatsApp keeps them all tappable) can never act on another record or another field.
-    TAGGED = ("f:", "rest:", "m:pick:", "m:new", "m:unsure", "d:", "cap:", "q:")
+    TAGGED = ("f:", "rest:", "m:pick:", "m:new", "m:unsure", "m:code_", "d:", "cap:", "q:")
 
     def _tag(self, messages: list[dict]) -> list[dict]:
         rid, fid = self.state.get("record_id"), self.state.get("current")
@@ -205,7 +205,7 @@ class Agent:
 
     # A button is only valid in the step that offered it: in WhatsApp old buttons stay tappable.
     BUTTON_MODES = {"cap": {"capture", "quality_pending"}, "q": {"quality_pending", "capture"}, "f": {"review"},
-                    "rest": {"rest", "pick_field"}, "m": {"match"}, "d": {"redigit"}}
+                    "rest": {"rest", "pick_field"}, "m": {"match", "confirm_code"}, "d": {"redigit"}}
     MANUAL_ANSWERS = {"yes", "no", "skip", "end"}
 
     def _stale(self, bid: str) -> bool:
@@ -645,6 +645,14 @@ class Agent:
         if not q.get("code"):
             self._set_mode("ask_code", record_id=rid)
             return [_msg(self.tr("ask_code"))]
+        code_entry = rec.payload.get("fields", {}).get("cover.registry_code", {})
+        typed = code_entry.get("source") in ("manual", "corrected") or rec.payload.get("code")
+        if not typed and not rec.payload.get("code_confirmed"):
+            # The code links the visits: a misread digit would attach the visit to the wrong woman
+            # or create a duplicate, so the read code is always shown and confirmed.
+            self._set_mode("confirm_code", record_id=rid)
+            return [_msg(self.tr("confirm_code", code=q["code"]),
+                         [("m:code_ok", self.tr("btn_code_ok")), ("m:code_edit", self.tr("btn_code_edit"))])]
         cands = find_candidates(q, self.store.list_patients())
         self._set_mode("match", record_id=rid, candidates=[c.patient_id for c in cands])
         if plausible(cands):
@@ -683,6 +691,14 @@ class Agent:
         if rid is None:
             return self._menu(greet=False)
         rec = self.store.get_record(rid)
+        if arg == "code_ok":
+            payload = rec.payload
+            payload["code_confirmed"] = True
+            self.store.update_record(rid, payload=payload)
+            return self._match_start(rid)
+        if arg == "code_edit":
+            self._set_mode("ask_code", record_id=rid)
+            return [_msg(self.tr("ask_code"))]
         if arg == "unsure":
             payload = rec.payload
             payload["match_undecided"] = True

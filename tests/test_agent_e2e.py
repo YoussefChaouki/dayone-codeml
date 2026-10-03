@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import pytest
-from conftest import jpeg_bytes, page_png, wait_processed
+from conftest import FakeExtractor, jpeg_bytes, page_png, wait_processed
 
 from dayone.device.agent import Agent, field_crop
 from dayone.device.lifecycle import RecordState
@@ -253,3 +253,26 @@ def test_old_review_button_on_registered_record_is_refused(phone):
     assert phone.store.get_record(rid).state == S.SYNCED
     msgs = phone.tap(f"manual:record:{rid}")
     assert "plus valable" in phone.text(msgs)
+
+
+def test_code_read_from_the_cover_is_always_confirmed(phone, server):
+    from dayone.schema import FieldResult, FieldStatus
+
+    def with_code(image, expected=None, check_quality=True):
+        result = FakeExtractor().extract(image, expected, check_quality)
+        result.fields["cover.registry_code"] = FieldResult(field_id="cover.registry_code", status=FieldStatus.KNOWN,
+                                                           value="2026-63-007", confidence=0.99, source="ocr")
+        return result
+
+    server.extractor.extract = with_code
+    rid = capture_offline(phone)
+    phone.net.online = True
+    phone.sync()
+    phone.tap(f"rev:start:{rid}")
+    phone.tap("f:confirm")
+    phone.tap("f:illegible")
+    msgs = phone.tap("rest:confirm")
+    assert "2026-63-007" in phone.text(msgs) and "m:code_edit" in phone.buttons(msgs)
+    phone.tap("m:code_edit")
+    msgs = phone.say("2026-163-007")
+    assert "2026-163-007" in phone.text(msgs) and "m:new" in phone.buttons(msgs)

@@ -59,6 +59,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "pick_field": "Tapez le *numéro* du champ à corriger :\n{list}",
         "validated": "✅ Fiche validée ({n} champs).",
         "ask_code": "Quel est le *code patiente* écrit sur le registre ?",
+        "confirm_code": "Le code patiente est la clé qui relie les visites. J'ai lu : *{code}*. Est-ce bien le code "
+                        "écrit sur le registre ?",
+        "btn_code_ok": "✅ C'est bien ça", "btn_code_edit": "✏️ Corriger le code",
         "match_question": "Cette fiche correspond-elle à une patiente déjà suivie ?\n{lines}",
         "match_line": "*Patiente {k}* — code {code} · {age} ans · DPA {edd} · {visits} visite(s)\n   ↳ {reasons}",
         "match_none": "Aucune patiente déjà suivie ne correspond (code {code}).",
@@ -150,6 +153,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "pick_field": "Type the *number* of the field to fix:\n{list}",
         "validated": "✅ Record validated ({n} fields).",
         "ask_code": "What is the *patient code* written on the registry?",
+        "confirm_code": "The patient code links the visits together. I read: *{code}*. Is this the code written on "
+                        "the registry?",
+        "btn_code_ok": "✅ That's right", "btn_code_edit": "✏️ Fix the code",
         "match_question": "Does this record belong to a patient already followed?\n{lines}",
         "match_line": "*Patient {k}* — code {code} · {age} y · EDD {edd} · {visits} visit(s)\n   ↳ {reasons}",
         "match_none": "No patient already followed matches (code {code}).",

@@ -220,6 +220,7 @@ def test_retry_after_upload_server_errors(tmp_path, server):
 
 def test_sibling_page_is_accepted_as_the_expected_page(registrar):
     from conftest import page_png
+
     from dayone.schema import PageType
 
     reg = registrar.register(page_png(7), expected=PageType.PP_EARLY_MOTHER)  # late page, same layout and zones

@@ -172,7 +172,10 @@ and its behaviour is testable. Principles:
 
 ## 7. Patient linking
 
-Key: the code written on the registry, compared after OCR-confusion normalisation
+Key: the code written on the registry. Because a single misread digit would attach a visit to
+the wrong woman (the final evaluation measured 85.7 % accuracy on codes), the code read by the
+AI is **always shown to the midwife for a one-tap confirmation** before matching (unless she
+typed it). It is then compared after OCR-confusion normalisation
 (O/0, I/1, S/5, B/8, Z/2) with an edit-distance tolerance. Candidates are scored with
 non-identifying attributes (age, LMP, EDD, gravidity/parity, province); conflicts are
 shown. Any candidate scoring ≥ 0.35 must be decided by the midwife:

@@ -20,7 +20,7 @@ Open http://127.0.0.1:8000. Left: the midwife's WhatsApp-style chat. Right: the
 | 5 | Switch the network **📶 En ligne** (optionally arm "réponse perdue" first) | Outbox empties: upload → server reads with the local models → `TRAITÉ_IA` → `À_RÉVISER`; a lost response is retried without duplicate |
 | 6 | Tap *🔎 Vérifier maintenant* | Each doubtful field: value, confidence, *why* (e.g. "valeur hors des plages habituelles, deux lectures différentes"), alternative reading. Try *🖼️ Voir l'image* (the exact crop), then pick the alternative (e.g. birth weight read *36269 g* → *3626 g*) |
 | 7 | *✅ Tout confirmer* | Summary of confident fields; `VALIDÉ` |
-| 8 | Match: first time *➕ Créer la patiente*; then photograph `spec_p03_medium.jpg` + `spec_p01_medium.jpg` of the same patient again | Second time: **[Patiente 1] [Aucune, créer] [Je ne sais pas]** with reasons ("même code, DPA cohérente"); if values differ, the re-digitisation diff lets the midwife keep old or take new |
+| 8 | Match: the agent first asks to confirm the code it read ("J'ai lu : 2026-…, est-ce bien le code ?"); then, the first time, *➕ Créer la patiente*; then photograph `spec_p03_medium.jpg` + `spec_p01_medium.jpg` of the same patient again | Second time: **[Patiente 1] [Aucune, créer] [Je ne sais pas]** with reasons ("même code, DPA cohérente"); if values differ, the re-digitisation diff lets the midwife keep old or take new |
 | 9 | Watch `ENREGISTRÉ` → `SYNCHRONISÉ` | "Fiche synchronisée avec le serveur ✔️" |
 | 10 | Backstage "Image d'origine — accès par rôle" | author midwife ✅, other midwife ⛔ 403, supervisor ✅, epidemiologist ⛔ — all audited |
 | 11 | Open http://127.0.0.1:8100/dashboard | Anonymised aggregates, cells < 5 shown as "<5" |
