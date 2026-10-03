@@ -71,6 +71,22 @@ make calibrate    # fit the confidence model + threshold on the calibration spli
 make report       # metrics on the test split -> docs/RESULTS.md
 ```
 
-## 6. Change log
+## 6. Known deviations (declared before the final run)
 
-* (none yet)
+* **Development thresholds saw every page.** The registration / page-type thresholds
+  (`MIN_SIMILARITY`, `MIN_MARGIN`), the tick-box fill band and the capture-quality
+  thresholds were set while looking at statistics over all 80 specimen pages (both splits).
+  They are geometric/image thresholds, not fitted to values, but the test-split numbers
+  for **page classification**, **tick boxes**, **blank detection** and **retake requests**
+  are therefore optimistic. The confidence model and τ (the uncertainty numbers) were fitted
+  on the calibration split only.
+* **One layout.** All test pages share the specimen layout; nothing here measures
+  generalisation to another booklet.
+* **Synthetic Arabic/English.** Fonts, not real handwriting.
+
+## 7. Change log
+
+* 2026-10-03 — first run interrupted twice by an Ollama runner hang (glm-ocr); the run is
+  resumable, items already predicted were kept. The second reader was made optional
+  (timeout + circuit breaker) during the run: items predicted before/after differ only if
+  the second reader failed, which is recorded per field (`second_missing`).
