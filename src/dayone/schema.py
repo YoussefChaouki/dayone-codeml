@@ -112,6 +112,7 @@ class FieldResult(BaseModel):
     status: FieldStatus
     value: Any = None
     raw_text: str | None = None  # what was read, before normalization
+    second_text: str | None = None  # what the independent second reader read (kept to recompute features)
     confidence: float = 0.0  # calibrated probability that (status, value) is correct
     alternatives: list[str] = Field(default_factory=list)  # other plausible readings, best first
     source: str = "ocr"  # ocr | checkbox | ink | vlm | manual | rule
@@ -122,7 +123,7 @@ class FieldResult(BaseModel):
 class PageExtraction(BaseModel):
     page_type: PageType | None
     page_type_confidence: float
-    layout: str  # "template" or "free" (template-free VLM fallback) or "failed"
+    layout: str  # "template" (registered on a known layout) or "failed" (page not recognised)
     fields: dict[str, FieldResult] = Field(default_factory=dict)
     quality: dict[str, Any] = Field(default_factory=dict)
     registration: dict[str, Any] = Field(default_factory=dict)

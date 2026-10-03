@@ -28,6 +28,7 @@ from dayone.extraction.quality import QualityReport, assess_capture
 from dayone.extraction.register import Registrar
 from dayone.extraction.validators import apply_rules
 from dayone.forms.layout import PAGE_FIELDS
+from dayone.pii import scrub_text
 from dayone.schema import FieldKind, FieldResult, FieldSpec, FieldStatus, PageExtraction, PageType, ValueType
 
 log = logging.getLogger(__name__)
@@ -73,27 +74,35 @@ def ocr_prompt(spec: FieldSpec) -> str:
             "Transcribe exactly what is written, nothing else. If the field only shows a dash, answer -.")
 
 
-def text_features(spec: FieldSpec, primary: Reading, second: Reading | None, parsed, second_parsed,
-                  ink: dict, reg_similarity: float, quality: QualityReport | None) -> dict[str, float]:
-    vt = spec.value_type
+def parse_features(spec: FieldSpec, primary_text: str, second_text: str | None) -> dict[str, float]:
+    """Features that depend on how the readings parse (recomputed whenever the parser changes)."""
+    parsed = parse_value(spec, primary_text)
     agree = None
-    if second is not None and second_parsed is not None:
-        agree = float(second_parsed.status == parsed.status
-                      and canonical(spec, second_parsed.value) == canonical(spec, parsed.value))
+    if second_text is not None:
+        sp = parse_value(spec, second_text)
+        agree = float(sp.status == parsed.status and canonical(spec, sp.value) == canonical(spec, parsed.value))
     return {
-        "lp_mean": primary.mean_logprob,
-        "lp_min": max(primary.min_logprob, -10.0),
-        "n_tokens": float(len(primary.token_logprobs)),
         "second_agree": agree if agree is not None else 0.0,
         "second_missing": float(agree is None),
         "parse_ok": float(parsed.ok),
         "lexicon_score": parsed.lexicon_score,
-        "n_flags": float(len(parsed.flags)),
         "out_of_range": float("out_of_range" in parsed.flags or "bp_implausible" in parsed.flags),
+        "is_arabic": float(bool(_ARABIC.search(primary_text or ""))),
+    }
+
+
+def text_features(spec: FieldSpec, primary: Reading, second: Reading | None, ink: dict, reg_similarity: float,
+                  quality: QualityReport | None) -> dict[str, float]:
+    vt = spec.value_type
+    return {
+        "lp_mean": primary.mean_logprob,
+        "lp_min": max(primary.min_logprob, -10.0),
+        "n_tokens": float(len(primary.token_logprobs)),
+        **parse_features(spec, primary.text, second.text if second is not None else None),
+        "n_flags": 0.0,  # set by finalise() once the consistency rules have run
         "ink_cols": min(ink.get("ink_cols", 0.0), 200.0) / 100.0,
         "reg_similarity": reg_similarity,
         "sharpness": min((quality.metrics.get("sharpness", 0.0) if quality else 0.0), 1000.0) / 1000.0,
-        "is_arabic": float(bool(_ARABIC.search(primary.text))),
         "vt_date": float(vt == ValueType.DATE),
         "vt_bp": float(vt == ValueType.BP),
         "vt_number": float(vt in (ValueType.INT, ValueType.FLOAT, ValueType.GEST_AGE)),
@@ -148,10 +157,10 @@ class Extractor:
             if fi["ink_cols"] < self.cfg.blank_ink_cols:
                 conf = 0.97 if fi["ink_cols"] == 0 else 0.85
                 fields[spec.id] = FieldResult(field_id=spec.id, status=FieldStatus.NOT_PROVIDED, confidence=conf,
-                                              source="ink", features=fi)
+                                              source="ink", features={"ink_cols": fi["ink_cols"]})
             else:
                 jobs.append((spec, fi))
-        crops = [crop_for_ocr(reg.warped, tpl, spec, enhance=False) for spec, _ in jobs]
+        crops = [crop_for_ocr(reg.warped, tpl, spec, box=fi["box"]) for spec, fi in jobs]
         with cf.ThreadPoolExecutor(self.cfg.workers) as ex:
             specs = [spec for spec, _ in jobs]
             primaries = list(ex.map(lambda a: self.primary.read(a[1], ocr_prompt(a[0])), zip(specs, crops, strict=True)))
@@ -191,36 +200,50 @@ class Extractor:
 
     def _text(self, spec: FieldSpec, fi: dict, primary: Reading, second: Reading | None, reg_sim: float,
               quality: QualityReport | None) -> FieldResult:
-        parsed = parse_value(spec, primary.text)
-        second_parsed = parse_value(spec, second.text) if second is not None else None
-        feats = text_features(spec, primary, second, parsed, second_parsed, fi, reg_sim, quality)
-        alternatives = [a for a in primary.alternatives if not a.startswith("<|")]
-        if second is not None and second.text and second.text != primary.text:
-            alternatives.insert(0, second.text)
+        free_text = spec.value_type == ValueType.TEXT
+        clean = (lambda t: scrub_text(t)) if free_text else (lambda t: t)  # no phone / ID number in comments
+        primary_text = clean(primary.text)
+        second_text = clean(second.text) if second is not None else None
+        parsed = parse_value(spec, primary_text)
+        feats = text_features(spec, primary, second, fi, reg_sim, quality)
+        alternatives = [clean(a) for a in primary.alternatives if not a.startswith("<|")]
+        if second_text and second_text != primary_text:
+            alternatives.insert(0, second_text)
         status, value = parsed.status, parsed.value
         if status == FieldStatus.NOT_PROVIDED:
             # ink was seen but the reader returned nothing: that is not a blank field
             status, value = FieldStatus.ILLEGIBLE, None
-        return FieldResult(field_id=spec.id, status=status, value=value, raw_text=primary.text,
-                           alternatives=alternatives[:3], source="ocr", flags=list(parsed.flags),
-                           features={k: round(v, 4) for k, v in feats.items()})
+        return FieldResult(field_id=spec.id, status=status, value=value, raw_text=primary_text,
+                           second_text=second_text, alternatives=alternatives[:3], source="ocr",
+                           flags=list(parsed.flags), features={k: round(v, 4) for k, v in feats.items()})
 
     def _finalise(self, fields: dict[str, FieldResult]) -> None:
         finalise(fields, self.confidence, self.cfg)
 
 
 def finalise(fields: dict[str, FieldResult], model: ConfidenceModel, cfg: PipelineConfig) -> None:
-    """Confidence (once consistency-rule flags are known) and acceptance decision for OCR fields."""
+    """Confidence (once consistency-rule flags are known) and the decision to ask the midwife.
+
+    A value is accepted without review (KNOWN) only if its confidence reaches τ **and** nothing
+    is wrong with it: an automatic repair or any consistency-rule flag always sends it to review.
+    Dashes / question marks read by the OCR keep their status but are confirmed with the midwife
+    when the reading is not confident ("confirm_special").
+    """
     for f in fields.values():
+        if f.source == "checkbox" and "several_options_ticked" in f.flags:
+            f.status = FieldStatus.NEEDS_REVIEW
         if f.source != "ocr":
             continue
-        f.features["n_flags"] = float(len([fl for fl in f.flags if not fl.startswith("not_applicable")]))
+        rule_flags = [fl for fl in f.flags if not fl.startswith("not_applicable")]
+        f.features["n_flags"] = float(len(rule_flags))
         f.confidence = round(model.predict(f.features), 4)
         if f.status == FieldStatus.KNOWN:
             if f.features["parse_ok"] == 0.0 and f.confidence < cfg.illegible_threshold:
                 f.status, f.value = FieldStatus.ILLEGIBLE, None
-            elif f.confidence < cfg.accept_threshold:
+            elif f.confidence < cfg.accept_threshold or rule_flags:
                 f.status = FieldStatus.NEEDS_REVIEW
+        elif f.status in (FieldStatus.NOT_APPLICABLE, FieldStatus.UNKNOWN) and f.confidence < cfg.accept_threshold:
+            f.flags.append("confirm_special")
 
 
 def rescore(extraction: PageExtraction, model: ConfidenceModel, cfg: PipelineConfig) -> PageExtraction:
@@ -238,6 +261,7 @@ def rescore(extraction: PageExtraction, model: ConfidenceModel, cfg: PipelineCon
             spec = ALL_FIELDS[f.field_id]
             parsed = parse_value(spec, f.raw_text)
             f.status, f.value, f.flags = parsed.status, parsed.value, list(parsed.flags)
+            f.features.update(parse_features(spec, f.raw_text or "", f.second_text))
             if f.status == FieldStatus.NOT_PROVIDED:
                 f.status, f.value = FieldStatus.ILLEGIBLE, None
         elif f.source == "rule":  # blank field turned NOT_APPLICABLE by a rule: let rules decide again

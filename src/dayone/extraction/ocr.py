@@ -61,6 +61,19 @@ PROMPTS = {
 }
 
 
+MIN_SIDE = 64  # vision models reject images under 32 px a side (patch factor); keep a margin
+
+
+def _pad_small(img: np.ndarray) -> np.ndarray:
+    """Pad a small crop with its paper colour up to ``MIN_SIDE`` (tight crops of short values, dashes)."""
+    h, w = img.shape[:2]
+    if h >= MIN_SIDE and w >= MIN_SIDE:
+        return img
+    color = [int(c) for c in np.median(img.reshape(-1, img.shape[2]), axis=0)]
+    dy, dx = max(0, MIN_SIDE - h), max(0, MIN_SIDE - w)
+    return cv2.copyMakeBorder(img, dy // 2, dy - dy // 2, dx // 2, dx - dx // 2, cv2.BORDER_CONSTANT, value=color)
+
+
 def _encode(img: np.ndarray) -> str:
     ok, buf = cv2.imencode(".png", img)
     if not ok:
@@ -107,7 +120,7 @@ class OcrEngine:
 
     def read(self, crop_bgr: np.ndarray, prompt: str | None = None) -> Reading:
         prompt = prompt or PROMPTS.get(self.model.split(":")[0], PROMPTS["default"])
-        image_b64 = _encode(crop_bgr)
+        image_b64 = _encode(_pad_small(crop_bgr))
         key = hashlib.sha256(f"{self.model}|{prompt}|{image_b64}".encode()).hexdigest()
         cache = self.cache_dir / f"{key}.json" if self.cache_dir else None
         if cache and cache.exists():

@@ -80,14 +80,60 @@ def checkbox_fill(ink: InkMap, spec: FieldSpec, shrink_pt: float = 1.5) -> float
     return float(inner.mean()) if inner.size else 0.0
 
 
-def field_ink(ink: InkMap, spec: FieldSpec, pad_pt: float = 0.0) -> dict[str, float]:
-    x0, y0, x1, y1 = pt_to_px(spec.region, pad=pad_pt)
-    roi = ink.ink[max(y0, 0):y1, max(x0, 0):x1]
-    if roi.size == 0:
-        return {"ink_px": 0.0, "ink_ratio": 0.0, "ink_cols": 0.0}
-    cols = roi.any(axis=0)
-    return {"ink_px": float(roi.sum()), "ink_ratio": float(roi.mean()),
-            "ink_cols": float(cols.sum()) / SCALE}  # horizontal extent of ink, in points
+def value_box(ink: InkMap, spec: FieldSpec, search_pt: float = 5.0) -> tuple[int, int, int, int] | None:
+    """Pixel box of the handwritten value of ``spec``, or None if the field holds no new ink.
+
+    Registration leaves 1-3 pt of error, enough for a field crop to catch the value of the
+    neighbouring row or a column header. So the value is located from the ink itself: in a
+    window slightly taller than the field, horizontal bands of new ink are found, and the
+    bands lying mostly inside the field are kept (a neighbour's band overlaps only its edge).
+    """
+    rx0, ry0, rx1, ry1 = pt_to_px(spec.region)
+    h, w = ink.ink.shape
+    rx0, rx1 = max(rx0, 0), min(rx1, w)
+    wy0, wy1 = max(ry0 - int(search_pt * SCALE), 0), min(ry1 + int(search_pt * SCALE), h)
+    win = ink.ink[wy0:wy1, rx0:rx1].copy()
+    if win.size == 0:
+        return None
+    # Table borders shifted by the residual misregistration are not explained by the template:
+    # drop long straight strokes (most of the window's height or width) before looking for text.
+    win[:, win.mean(axis=0) > 0.6] = 0
+    win[win.mean(axis=1) > 0.6, :] = 0
+    active = win.sum(axis=1) >= 2
+    gap = int(1.5 * SCALE)
+    bands, start, last = [], None, None
+    for y, a in enumerate(active):
+        if a:
+            if start is None:
+                start = y
+            elif y - last > gap:
+                bands.append((start, last + 1))
+                start = y
+            last = y
+    if start is not None:
+        bands.append((start, last + 1))
+    keep = []
+    for b0, b1 in bands:
+        if win[b0:b1].sum() < 2 * MIN_COMPONENT_PX:
+            continue
+        inside = max(0, min(b1, ry1 - wy0) - max(b0, ry0 - wy0))
+        if inside / (b1 - b0) >= 0.5:
+            keep.append((b0, b1))
+    if not keep:
+        return None
+    y0, y1 = min(b[0] for b in keep), max(b[1] for b in keep)
+    cols = np.where(win[y0:y1].any(axis=0))[0]
+    return rx0 + int(cols[0]), wy0 + y0, rx0 + int(cols[-1]) + 1, wy0 + y1
+
+
+def field_ink(ink: InkMap, spec: FieldSpec) -> dict[str, float]:
+    box = value_box(ink, spec)
+    if box is None:
+        return {"ink_px": 0.0, "ink_cols": 0.0, "box": None}
+    x0, y0, x1, y1 = box
+    roi = ink.ink[y0:y1, x0:x1]
+    return {"ink_px": float(roi.sum()), "ink_cols": float(roi.any(axis=0).sum()) / SCALE,  # extent in points
+            "box": [x0, y0, x1, y1]}
 
 
 def enhance_for_ocr(crop_bgr: np.ndarray, min_height: int = 64) -> np.ndarray:
@@ -118,10 +164,16 @@ def enhance_for_ocr(crop_bgr: np.ndarray, min_height: int = 64) -> np.ndarray:
     return cv2.cvtColor(norm, cv2.COLOR_GRAY2BGR)
 
 
-def crop_for_ocr(warped_bgr: np.ndarray, template: Template, spec: FieldSpec, pad_pt: float = 2.0,
-                 enhance: bool = True) -> np.ndarray:
-    x0, y0, x1, y1 = pt_to_px(spec.region, pad=pad_pt)
+def crop_for_ocr(warped_bgr: np.ndarray, template: Template, spec: FieldSpec, box: list[int] | None = None,
+                 margin_pt: float = 2.5, enhance: bool = False) -> np.ndarray:
+    """Crop sent to the reader: the located value (``box``) with a margin, else the whole field."""
     h, w = warped_bgr.shape[:2]
+    if box is not None:
+        m = int(margin_pt * SCALE)
+        fx0, _, fx1, _ = pt_to_px(spec.region, pad=2.0)
+        x0, y0, x1, y1 = max(box[0] - m, fx0), box[1] - m, min(box[2] + m, fx1), box[3] + m
+    else:
+        x0, y0, x1, y1 = pt_to_px(spec.region, pad=2.0)
     x0, y0, x1, y1 = max(x0, 0), max(y0, 0), min(x1, w), min(y1, h)
     crop = warped_bgr[y0:y1, x0:x1].copy()
     if not enhance:

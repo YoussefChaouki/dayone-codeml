@@ -11,6 +11,7 @@ only check internal consistency of what was written.
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from datetime import date, timedelta
 
@@ -40,6 +41,13 @@ def _date(fields: Fields, fid: str) -> date | None:
 def _num(fields: Fields, fid: str) -> float | None:
     v = _val(fields, fid)
     return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+
+
+def _bp(fields: Fields, fid: str) -> tuple[int, int] | None:
+    """A parsed blood pressure ("120/80"); anything else (an unparsed reading) is ignored."""
+    v = _val(fields, fid)
+    m = re.fullmatch(r"(\d{2,3})/(\d{2,3})", v) if isinstance(v, str) else None
+    return (int(m.group(1)), int(m.group(2))) if m else None
 
 
 def _flag(fields: Fields, fids: list[str], flag: str) -> None:
@@ -93,9 +101,9 @@ def check_pregnancy(f: Fields) -> None:
             if prev_weight is not None and abs(weight - prev_weight) > 6:
                 _flag(f, [v + "weight"], "weight_jump_between_visits")
             prev_weight = weight
-        bp = _val(f, v + "bp")
-        if isinstance(bp, str) and "/" in bp:
-            s, d = (int(x) for x in bp.split("/"))
+        bp = _bp(f, v + "bp")
+        if bp:
+            s, d = bp
             if not (70 <= s <= 220 and 40 <= d <= 140 and s > d):
                 _flag(f, [v + "bp"], "bp_implausible")
         if vdate:
@@ -146,9 +154,9 @@ def check_delivery(f: Fields) -> None:
 
 def check_pp_mother(prefix: str) -> Callable[[Fields], None]:
     def rule(f: Fields) -> None:
-        bp = _val(f, prefix + "bp")
-        if isinstance(bp, str) and "/" in bp:
-            s, d = (int(x) for x in bp.split("/"))
+        bp = _bp(f, prefix + "bp")
+        if bp:
+            s, d = bp
             if not (70 <= s <= 220 and 40 <= d <= 140 and s > d):
                 _flag(f, [prefix + "bp"], "bp_implausible")
         if _checked(f, prefix + "cesarean") is False:

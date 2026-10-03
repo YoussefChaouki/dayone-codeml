@@ -288,7 +288,9 @@ def parse_value(spec: FieldSpec, raw: str | None) -> Parsed:
         return Parsed(K, canon, lexicon_score=score)
     # free text
     if spec.vocabulary:
-        canon, score = match_vocab(text, spec.vocabulary, cutoff=85.0)
+        # very short words ("RAS" read "eAs") are snapped more permissively; the lower lexicon
+        # score lowers the confidence, so the midwife still sees them when in doubt
+        canon, score = match_vocab(text, spec.vocabulary, cutoff=65.0 if len(fold(text)) <= 4 else 85.0)
         if canon is not None:
             return Parsed(K, canon, lexicon_score=score)
     return Parsed(K, text)

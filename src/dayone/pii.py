@@ -20,7 +20,7 @@ from dayone.forms.templates import SCALE
 from dayone.schema import PageType
 
 PHONE = re.compile(r"(?:\+?212|0)\s*[5-7](?:[\s.\-]*\d){8}")
-NATIONAL_ID = re.compile(r"\b[A-Z]{1,2}\s?\d{5,7}\b")
+NATIONAL_ID = re.compile(r"\b[A-Z]{1,2}\s?\d{5,7}\b", re.IGNORECASE)
 MASK = "[masqué]"
 
 

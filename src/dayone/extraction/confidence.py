@@ -42,6 +42,7 @@ class ConfidenceModel:
     scale: np.ndarray
     source: str = "default"
     accept_threshold: float | None = None  # chosen on the calibration split (docs/EVALUATION.md, rule 2)
+    target_reached: bool | None = None  # whether τ met the silent-error target on calibration
 
     def predict(self, feats: dict[str, float]) -> float:
         z = (feature_vector(feats) - self.mean) / self.scale
@@ -50,14 +51,15 @@ class ConfidenceModel:
     def to_json(self) -> dict:
         return {"features": TEXT_FEATURES, "coef": self.coef.tolist(), "intercept": self.intercept,
                 "mean": self.mean.tolist(), "scale": self.scale.tolist(), "source": self.source,
-                "accept_threshold": self.accept_threshold}
+                "accept_threshold": self.accept_threshold, "target_reached": self.target_reached}
 
     @classmethod
     def from_json(cls, data: dict) -> ConfidenceModel:
         if data["features"] != TEXT_FEATURES:
             raise ValueError("confidence model was trained on a different feature set: re-run `make calibrate`")
         return cls(np.array(data["coef"]), float(data["intercept"]), np.array(data["mean"]),
-                   np.array(data["scale"]), data.get("source", "trained"), data.get("accept_threshold"))
+                   np.array(data["scale"]), data.get("source", "trained"), data.get("accept_threshold"),
+                   data.get("target_reached"))
 
     @classmethod
     def load(cls, path: Path = DEFAULT_MODEL_PATH) -> ConfidenceModel:

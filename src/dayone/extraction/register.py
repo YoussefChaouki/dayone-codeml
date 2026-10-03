@@ -212,8 +212,11 @@ class Registrar:
 
     # -- public API ---------------------------------------------------------------
     def register(self, capture_bgr: np.ndarray, expected: PageType | None = None) -> Registration:
+        """Classify and register a capture. ``expected`` (retake of a given page) is *checked*, never
+        assumed: the page is always classified among every layout, and a different page is refused
+        (registering it on the wrong template would mask the wrong zones and leak identifiers)."""
         gray = cv2.cvtColor(capture_bgr, cv2.COLOR_BGR2GRAY)
-        candidates = [expected] if expected else list(self.templates)
+        candidates = list(self.templates)
         quad = find_page_quad(capture_bgr)
         aligned: dict[PageType, tuple[np.ndarray, str]] = {}
         if quad is not None:
@@ -231,7 +234,7 @@ class Registrar:
         best = max(sims, key=sims.get)
         others = [v for pt, v in sims.items() if pt not in (best, SIBLINGS.get(best, best))]
         margin = sims[best] - max(others, default=0.0)
-        if sims[best] < MIN_SIMILARITY or (expected is None and margin < MIN_MARGIN):
+        if sims[best] < MIN_SIMILARITY or margin < MIN_MARGIN:
             return Registration(False, None, 0.0, sims[best], scores=scores,
                                 reason=f"weak_match(sim={sims[best]:.2f}, margin={margin:.2f})")
         h, method = aligned[best]
@@ -241,9 +244,12 @@ class Registrar:
         warped = cv2.warpPerspective(capture_bgr, h, self.tpl_size, flags=cv2.INTER_LINEAR,
                                      borderMode=cv2.BORDER_REPLICATE)
         page_type = best
-        if expected is None and best in SIBLINGS:
+        if best in SIBLINGS:
             page_type = self._disambiguate(warped, best, SIBLINGS[best])
-        confidence = 1.0 if expected else float(np.clip(margin / 0.2, 0.0, 1.0))
+        confidence = float(np.clip(margin / 0.2, 0.0, 1.0))
+        if expected is not None and page_type != expected:
+            return Registration(False, page_type, confidence, sims[best], method, scores,
+                                reason=f"unexpected_page:{page_type.value}")
         return Registration(True, page_type, confidence, sims[best], method, scores, h, warped)
 
     def _refine_ecc(self, capture_gray: np.ndarray, h: np.ndarray, pt: PageType) -> tuple[np.ndarray, bool]:
