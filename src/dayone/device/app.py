@@ -102,6 +102,14 @@ def create_app(device: Device) -> FastAPI:
         path = _sample_path(name)
         return device.agent.handle({"type": "image", "data": path.read_bytes(), "text": f"📷 {name}"})
 
+    @app.post("/api/hello")
+    def hello() -> list[dict]:
+        """Greets once: only when the conversation is empty (several tabs may open at once)."""
+        with device.agent.lock:
+            if device.store.chat_log():
+                return []
+            return device.agent.handle({"type": "text", "text": "menu"})
+
     @app.get("/api/messages")
     def messages(after: int = 0) -> list[dict]:
         return [m | {"id": i} for i, m in device.store.chat_log(after)]

@@ -27,7 +27,7 @@ import numpy as np
 from dayone.device.i18n import QUALITY, REASONS, t
 from dayone.device.lifecycle import STATE_LABEL_FR, RecordState
 from dayone.device.store import DeviceStore, new_id
-from dayone.extraction.normalize import parse_value
+from dayone.extraction.normalize import fold, parse_value
 from dayone.extraction.quality import assess_capture
 from dayone.extraction.register import Registrar
 from dayone.forms.layout import ALL_FIELDS, PAGE_FIELDS, PAGE_ORDER, VISIT_COLS
@@ -397,6 +397,10 @@ class Agent:
                         [("f:edit", self.tr("btn_type_value")), ("f:blank", self.tr("btn_blank")),
                          ("f:illegible", self.tr("btn_illegible"))] + show)
         value = display_value(fid, e.get("value"), self.lang)
+        raw = (e.get("raw") or "").strip()
+        shown = value
+        if raw and spec.vocabulary and fold(raw) != fold(value):
+            shown = f"« {raw} » → {value}"  # what is written, and how it was understood
         alts = self._alternatives(fid, e)
         alt_text = self.tr("review_alts", alts=" · ".join(display_value(fid, a, self.lang) for a in alts)) if alts else ""
         reasons = [REASONS[self.lang].get(f, f) for f in e.get("flags", []) if f in REASONS[self.lang]]
@@ -407,7 +411,7 @@ class Agent:
         buttons = [("f:confirm", self.tr("btn_confirm_value", value=value))]
         buttons += [(f"f:alt:{i}", f"{display_value(fid, a, self.lang)}") for i, a in enumerate(alts)]
         buttons += [("f:edit", self.tr("btn_edit"))] + show
-        return _msg(self.tr("review_field", k=k, n=n, label=lab, page=page, value=value,
+        return _msg(self.tr("review_field", k=k, n=n, label=lab, page=page, value=shown,
                             conf=int(round(100 * float(e.get("confidence", 0)))), alts=alt_text, why=why), buttons)
 
     def _alternatives(self, fid: str, e: dict) -> list:
@@ -445,8 +449,9 @@ class Agent:
             self.state.update(mode="correct", back="review")
             return [_msg(self.tr("ask_value", label=label(fid, self.lang), example=vocabulary_examples(fid, self.lang)))]
         elif arg == "show":
+            # the crop, then the same question again so the answer buttons stay at hand
             return [_msg(self.tr("crop_caption", label=label(fid, self.lang)),
-                         image=f"/api/crops/{e.get('page_id')}/{fid}")]
+                         image=f"/api/crops/{e.get('page_id')}/{fid}")] + self._review_next()
         elif arg == "retake":
             page_type = fid.split(".")[0]
             self._set_mode("capture", record_id=rid, retake=page_type)

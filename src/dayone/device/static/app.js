@@ -1,6 +1,7 @@
 // DayOne phone simulator: renders the chat, sends events, polls the background state.
 const $ = (s) => document.querySelector(s);
 let lastId = 0;
+const shown = new Set(); // polls can overlap: never render a message twice
 let lang = "fr";
 
 function escapeHtml(s) {
@@ -44,7 +45,12 @@ async function poll() {
   try {
     const r = await fetch("/api/messages?after=" + lastId);
     const msgs = await r.json();
-    for (const m of msgs) { render(m); lastId = Math.max(lastId, m.id); }
+    for (const m of msgs) {
+      if (shown.has(m.id)) continue;
+      shown.add(m.id);
+      render(m);
+      lastId = Math.max(lastId, m.id);
+    }
   } catch (e) {
     $("#presence").textContent = "connexion à l'application perdue… (" + e.message + ")";
   }
@@ -157,7 +163,7 @@ $("#access").onclick = async () => {
   }
 };
 
-poll(); refreshState();
+refreshState();
 setInterval(poll, 1000);
 setInterval(refreshState, 1500);
-(async () => { if (lastId === 0) { await new Promise((r) => setTimeout(r, 400)); if (lastId === 0) send({ type: "text", text: "menu" }); } })();
+(async () => { await fetch("/api/hello", { method: "POST" }); await poll(); })();
