@@ -1,0 +1,17 @@
+# organisers' data and everything generated from it
+data/
+manifest.json
+consignes-fr-en.pdf
+artifacts/
+# python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+# local databases
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
