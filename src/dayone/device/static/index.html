@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DayOne — téléphone de la sage-femme</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div class="layout">
+  <!-- The phone ------------------------------------------------------------ -->
+  <section class="phone" aria-label="Conversation WhatsApp simulée">
+    <header class="chat-head">
+      <div class="avatar" aria-hidden="true">D1</div>
+      <div class="who">
+        <div class="name">DayOne · assistante registre</div>
+        <div class="presence" id="presence">…</div>
+      </div>
+      <button class="icon" id="lang" title="Langue / language">FR</button>
+    </header>
+    <div class="messages" id="messages" aria-live="polite"></div>
+    <footer class="composer">
+      <button class="icon" id="camera" title="Photographier une page">📷</button>
+      <input id="text" type="text" autocomplete="off" placeholder="Message" aria-label="Message">
+      <button class="send" id="send" title="Envoyer">➤</button>
+    </footer>
+  </section>
+
+  <!-- Backstage ------------------------------------------------------------ -->
+  <section class="backstage" aria-label="Coulisses de la démo">
+    <h1>Coulisses</h1>
+    <p class="hint">Ce panneau n'existe pas pour la sage-femme : il montre ce que fait le téléphone.</p>
+
+    <div class="card">
+      <h2>Réseau</h2>
+      <div class="row">
+        <button class="toggle" id="net" aria-pressed="false">…</button>
+        <button class="ghost" id="restart" title="Tue l'application et la rouvre depuis le stockage chiffré">💥 Crash + redémarrage</button>
+      </div>
+      <div class="row small">
+        Pannes à la prochaine requête :
+        <button class="chip" data-fault="drop_request">requête perdue</button>
+        <button class="chip" data-fault="drop_response">réponse perdue</button>
+        <button class="chip" data-fault="server_error">erreur serveur</button>
+      </div>
+      <ul class="log" id="netlog"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Fiches et cycle de vie</h2>
+      <div id="records"></div>
+    </div>
+
+    <div class="card">
+      <h2>File d'attente (outbox)</h2>
+      <ul class="log" id="outbox"></ul>
+    </div>
+
+    <div class="card">
+      <h2>Stockage local chiffré</h2>
+      <p class="small">Ce que verrait quelqu'un qui copie la base du téléphone :</p>
+      <pre id="raw"></pre>
+      <p class="small"><span id="patients">0</span> patiente(s) dans l'index local (aucun nom, aucun numéro).</p>
+    </div>
+
+    <div class="card">
+      <h2>Image d'origine — accès par rôle (serveur)</h2>
+      <div class="row small">
+        <select id="role">
+          <option value="token-sf-amina">Sage-femme auteure (sf-amina)</option>
+          <option value="token-sf-hajar">Autre sage-femme (sf-hajar)</option>
+          <option value="token-sup-karim">Superviseur</option>
+          <option value="token-epi-salma">Épidémiologiste</option>
+        </select>
+        <button class="ghost" id="access">Demander la dernière image synchronisée</button>
+      </div>
+      <div id="access-result" class="small"></div>
+      <p class="small"><a href="http://127.0.0.1:8100/dashboard" target="_blank" rel="noopener">Tableau de bord épidémiologique (agrégats anonymisés) ↗</a></p>
+    </div>
+  </section>
+</div>
+
+<dialog id="gallery">
+  <form method="dialog" class="gallery-head">
+    <strong>Appareil photo simulé</strong>
+    <label class="upload">📁 Importer une photo<input type="file" id="file" accept="image/*"></label>
+    <button class="ghost">Fermer</button>
+  </form>
+  <div id="samples"></div>
+</dialog>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
