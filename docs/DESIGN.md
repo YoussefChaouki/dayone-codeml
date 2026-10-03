@@ -35,7 +35,7 @@ listed separately (`PII_ZONES`) to be blacked out.
 | Status | Meaning | Who sets it |
 |---|---|---|
 | `KNOWN` (CONNU) | value trusted: confidence ≥ τ, or confirmed/entered by the midwife | pipeline / midwife |
-| `NEEDS_REVIEW` (À_RÉVISER) | a value was read but confidence < τ or a consistency rule failed | pipeline |
+| `NEEDS_REVIEW` (À_RÉVISER) | a value was read but confidence < τ, a consistency rule flagged it, or it was automatically repaired | pipeline |
 | `ILLEGIBLE` (ILLISIBLE) | ink is present but could not be read | pipeline / midwife |
 | `NOT_PROVIDED` (NON_FOURNI) | the field is blank on paper | pixel check (no ink) / midwife |
 | `NOT_APPLICABLE` (NON_APPLICABLE) | a dash is written, or the field is logically not applicable (cesarean indication after a vaginal birth, previous-delivery columns beyond the parity, vaccine date when not vaccinated…) | reader / rules / midwife |
@@ -73,9 +73,15 @@ offline. Decisions and what they replaced:
   survives shadows better than brightness — and rectify its four corners, (2) refine with
   SIFT matches constrained to stay within 4 % of the page width of their rectified
   position, (3) refine densely with ECC, and (4) verify every candidate page type by
-  correlating the warped capture with the whole blank template. Result: 320/320 pages
-  correctly classified across clean/mild/medium/severe (exploration), median
-  registration error 1-2 pt, ≈ 0.5 s per page on CPU.
+  correlating the warped capture with the whole blank template. Result during development:
+  320/320 captures correctly classified (all 80 pages × 4 levels — this used **both** splits,
+  see EVALUATION.md §6), median registration error 1-2 pt, ≈ 0.5 s per page on CPU. A retake
+  of a given page is classified like any capture and refused if it shows another page.
+* **Value boxes.** 1-3 pt of residual registration error is enough for a field crop to
+  catch the value of the neighbouring row or a column header (exploration: one history page
+  went from 39 % to 100 % once fixed). The value is therefore located from the ink: in a
+  window slightly taller than the field, horizontal bands of new ink are found (long table
+  borders ignored) and only bands lying mostly inside the field are kept.
 * **Tick boxes** are read from pixels: the boxes are hand-drawn and each one is shifted by
   1-2 pt, so the square is first located by matching a hollow-square kernel near its
   expected position, then its interior fill is measured. Unticked boxes fill ≤ 0.09 even
@@ -97,7 +103,11 @@ offline. Decisions and what they replaced:
   correctness signal, and its reading is offered as an alternative.
 * **Parsing** turns text into canonical typed values (dates, BP, numbers with units,
   Eastern-Arabic digits, FR/EN/AR vocabularies with fuzzy matching). The same parser
-  normalises ground truth and predictions.
+  normalises ground truth and predictions (we checked that later parser changes leave the
+  ground truth unchanged). Systematic misreadings are repaired only when the repair lands in
+  the plausible range — lost decimal point ("791" → 79.1 kg), unit "g" read as "9"
+  ("36269" → 3626 g), lost BP slash ("137192" → 137/92) — and a repaired value always goes
+  to review.
 * **Consistency rules** ([`validators.py`](../src/dayone/extraction/validators.py)) never
   change a value; they flag it: EDD = LMP + 280 d, post-term date = EDD + 7 d,
   gestational age vs visit date and LMP, chronological visits, implausible weight jumps
@@ -116,8 +126,11 @@ It is fitted on the calibration split only (`make calibrate`) and stored as JSON
 
 The acceptance threshold τ is chosen **before** looking at test data, by a pre-registered
 rule ([EVALUATION.md](EVALUATION.md)): the smallest τ whose silent error rate on the
-calibration split is ≤ 2 %. Below τ, the agent asks the midwife — that is the only
-mechanism that decides follow-up questions.
+calibration split is ≤ 2 %, computed on out-of-fold (leave-one-patient-out) confidences.
+The midwife is asked about a field when its confidence is below τ, when a consistency rule
+flagged it, when it was repaired, when it is illegible, or when a dash / question mark was
+read without confidence. Everything else is summarised (including how many fields were left
+blank or marked not applicable) and confirmed in bulk.
 
 ## 5. Conversation
 
@@ -174,11 +187,16 @@ for the supervisor.
   out on the photo **on the phone, before the photo is encrypted and stored**. The stored
   "original image" is this redacted photo. A page whose layout is not recognised is not
   stored at all (its identifier zones cannot be located); the midwife can type it in.
-* Free-text values are scrubbed of phone and ID-number patterns.
+* Free-text values (read by the OCR or typed) are scrubbed of phone and ID-number patterns;
+  codes are never altered.
 * Original images on the server are encrypted at rest and served by role: the midwife who
   captured them and supervisors; other midwives and epidemiologists get 403; every
   access is audited.
-* Aggregates for epidemiology suppress any cell under 5 women.
+* Aggregates for epidemiology are computed per woman (one value per woman per indicator)
+  and suppress any cell under 5 women. The form has no hepatitis C row (it records Ag HBs,
+  hepatitis B): hepatitis C appears only from the organisers' reference CSV.
+* Server roles: only midwives upload pages and register records; field values and images
+  are visible to the capturing midwife and supervisors only.
 * All AI runs locally (Ollama); nothing is sent to a third party. The WhatsApp channel,
   which would send messages through Meta, is off unless explicitly configured.
 

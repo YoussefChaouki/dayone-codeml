@@ -159,6 +159,9 @@ def update_profile(profile: dict | None, record_id: str, payload: dict, at: floa
     if record_id not in profile["records"]:
         profile["records"].append(record_id)
     for fid, e in payload.get("fields", {}).items():
+        previous = profile["fields"].get(fid)
+        if e.get("status") == FieldStatus.NOT_PROVIDED.value and previous:
+            continue  # a blank on a re-photographed page never erases what is already known
         if e.get("status") in (FieldStatus.KNOWN.value, FieldStatus.UNKNOWN.value, FieldStatus.NOT_APPLICABLE.value):
             profile["fields"][fid] = {"status": e["status"], "value": e.get("value"), "record_id": record_id,
                                       "updated_at": at}
@@ -171,7 +174,11 @@ def diff_with_profile(profile: dict, payload: dict) -> list[dict]:
     out = []
     for fid, e in payload.get("fields", {}).items():
         old = profile.get("fields", {}).get(fid)
-        if old is None or e.get("status") != FieldStatus.KNOWN.value:
+        if old is None:
+            continue
+        # a new value, or a new "unknown / not applicable" replacing a known value, is shown to the midwife
+        replaces_known = old.get("status") == FieldStatus.KNOWN.value and e.get("status") != FieldStatus.KNOWN.value
+        if e.get("status") != FieldStatus.KNOWN.value and not replaces_known:
             continue
         if old.get("value") != e.get("value") or old.get("status") != e.get("status"):
             out.append({"field_id": fid, "old": old, "new": {"status": e["status"], "value": e.get("value")}})

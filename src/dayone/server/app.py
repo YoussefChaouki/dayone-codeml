@@ -198,14 +198,16 @@ def create_app(directory: Path = SERVER_DIR, extractor_factory=default_extractor
         if not rows:
             raise HTTPException(404, "unknown page")
         midwife, status, error, extraction, attempts = rows[0]
-        if who[1] == "midwife" and midwife != who[0]:
-            raise HTTPException(404, "unknown page")
+        if not (who[1] == "supervisor" or (who[1] == "midwife" and midwife == who[0])):
+            raise HTTPException(404, "unknown page")  # field values are not for other roles
         return {"page_id": page_id, "status": status, "error": error, "attempts": attempts,
                 "extraction": json.loads(extraction) if extraction else None}
 
     @app.post("/v1/records")
     def upsert_record(body: dict[str, Any], idempotency_key: str = Header(...),
                       who: tuple[str, str] = Depends(user)) -> dict:
+        if who[1] != "midwife":
+            raise HTTPException(403, "only midwives register records")
         prior = idempotent(f"record:{idempotency_key}")
         if prior is not None:
             return prior | {"duplicate_request": True}
@@ -252,7 +254,7 @@ def create_app(directory: Path = SERVER_DIR, extractor_factory=default_extractor
             raise HTTPException(403)
         from dayone.server.dashboard import aggregates
 
-        records = [json.loads(p) for (p,) in registry.execute("SELECT payload FROM records")]
+        records = [(pid, json.loads(p)) for pid, p in registry.execute("SELECT patient_id, payload FROM records")]
         return aggregates(records, k=K_ANONYMITY)
 
     @app.get("/dashboard", response_class=HTMLResponse)

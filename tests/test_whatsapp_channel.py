@@ -53,7 +53,7 @@ def test_webhook_parsing():
         ]
     }
     events = [e for _, e in parse_webhook(body)]
-    assert events[0] == {"type": "text", "text": "menu"}
+    assert events[0]["type"] == "text" and events[0]["text"] == "menu"
     assert events[1]["type"] == "button" and events[1]["id"] == "f:confirm"
     assert events[2]["media_id"] == "MEDIA1"
 
@@ -109,3 +109,18 @@ def test_webhook_checks_signature_and_ignores_unknown_numbers():
         == 200
     )
     assert len(cloud.sent) == 1 and cloud.sent[0]["to"] == "2126"  # the unknown number got nothing
+
+
+def test_redelivered_webhook_is_handled_once():
+    cfg = WhatsAppConfig("t", "pid", "verify", "secret", {"2126": "sf-amina"})
+    cloud = FakeCloud()
+    app = FastAPI()
+    app.include_router(router(cfg, lambda midwife: FakeAgent(), client=cloud))
+    c = TestClient(app)
+    body = json.dumps({"entry": [{"changes": [{"value": {"messages": [
+        {"id": "wamid.1", "from": "2126", "type": "text", "text": {"body": "menu"}}]}}]}]}).encode()
+    headers = {"X-Hub-Signature-256": "sha256=" + hmac.new(b"secret", body, hashlib.sha256).hexdigest(),
+               "Content-Type": "application/json"}
+    c.post("/whatsapp/webhook", content=body, headers=headers)
+    c.post("/whatsapp/webhook", content=body, headers=headers)  # Meta retries the same delivery
+    assert len(cloud.sent) == 1

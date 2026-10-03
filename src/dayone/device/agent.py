@@ -269,9 +269,10 @@ class Agent:
         return [_msg(self.tr("welcome") if greet else "👇", buttons)]
 
     def _records_to_review(self) -> list:
-        return self.store.list_records({RecordState.AI_PROCESSED, RecordState.NEEDS_REVIEW,
+        recs = self.store.list_records({RecordState.AI_PROCESSED, RecordState.NEEDS_REVIEW,
                                         RecordState.MANUAL_REVIEW_REQUIRED, RecordState.VALIDATED,
                                         RecordState.DUPLICATE_SUSPECTED})
+        return [r for r in recs if not r.payload.get("cancelled")]
 
     def _queue(self) -> list[dict]:
         recs = self.store.list_records()
@@ -294,7 +295,11 @@ class Agent:
         if mode in ("capture", "quality_pending") and rid:
             rec = self.store.get_record(rid)
             if rec.state == RecordState.CAPTURED:
-                self.store.transition(rid, RecordState.MANUAL_REVIEW_REQUIRED, self.midwife, "capture cancelled")
+                payload = rec.payload
+                payload["cancelled"] = True
+                with self.store.atomic():
+                    self.store.update_record(rid, payload=payload)
+                    self.store.transition(rid, RecordState.MANUAL_REVIEW_REQUIRED, self.midwife, "capture cancelled")
             self._set_mode("idle")
             return [_msg(self.tr("cancelled"))] + self._menu(greet=False)
         self._set_mode("idle")
@@ -523,7 +528,7 @@ class Agent:
             if p.status != FieldStatus.KNOWN or not p.ok:
                 return [_msg(self.tr("bad_value", text=text, label=label(fid, self.lang),
                                      example=vocabulary_examples(fid, self.lang)))]
-            value = scrub_text(p.value) if isinstance(p.value, str) else p.value
+            value = scrub_text(p.value) if spec.value_type == ValueType.TEXT else p.value  # never alter a code
             decide(payload, fid, FieldStatus.KNOWN.value, value, "corrected", self.midwife, now)
             shown = display_value(fid, value, self.lang)
         self.store.update_record(rid, payload=payload)
@@ -867,7 +872,7 @@ class Agent:
         if p.status != FieldStatus.KNOWN or not p.ok:
             return [_msg(self.tr("bad_value", text=text, label=label(fid, self.lang),
                                  example=vocabulary_examples(fid, self.lang)))]
-        value = scrub_text(p.value) if isinstance(p.value, str) else p.value
+        value = scrub_text(p.value) if spec.value_type == ValueType.TEXT else p.value  # never alter a code
         self._manual_store(fid, FieldStatus.KNOWN, value)
         return self._manual_advance()
 

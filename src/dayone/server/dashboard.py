@@ -1,6 +1,9 @@
 """Anonymised aggregates for epidemiology (bonus): blood pressure, temperature, HIV / syphilis /
 hepatitis tests.
 
+The registry form records HIV, syphilis and hepatitis B (Ag HBs) — it has no hepatitis C row,
+so hepatitis C is only available from the organisers' reference CSV.
+
 Only counts and distributions leave this module, never a record. Any cell describing
 fewer than ``k`` women is suppressed (shown as "<k"). Two sources are shown side by side:
 the records registered through the agent, and the organisers' synthetic reference CSV
@@ -40,32 +43,44 @@ def _tests(counter: Counter, k: int) -> dict:
     return out
 
 
-def _from_records(records: list[dict], k: int) -> dict:
-    sys_, dia, temp = [], [], []
-    tests = {"hiv": Counter(), "syphilis": Counter(), "hbsag": Counter()}
-    women = 0
-    for rec in records:
-        fields = rec.get("fields", {})
-        women += 1
-        for fid, e in fields.items():
+def _from_records(records: list[tuple[str, dict]], k: int) -> dict:
+    """Aggregates over women (not over measurements): one value per woman per indicator.
+
+    ``records`` are (patient id, record payload). A woman's blood pressure / temperature is
+    the mean of her readings; a test is positive if any of her results is positive.
+    """
+    per_woman: dict[str, dict[str, list]] = {}
+    for patient_id, rec in records:
+        w = per_woman.setdefault(patient_id, {"sys": [], "dia": [], "temp": [], "hiv": [], "syphilis": [], "hbsag": []})
+        for fid, e in rec.get("fields", {}).items():
             if e.get("status") != "KNOWN":
                 continue
             v = e.get("value")
             name = fid.rsplit(".", 1)[-1]
             m = re.fullmatch(r"(\d{2,3})/(\d{2,3})", v) if name == "bp" and isinstance(v, str) else None
             if m:
-                sys_.append(float(m.group(1)))
-                dia.append(float(m.group(2)))
+                w["sys"].append(float(m.group(1)))
+                w["dia"].append(float(m.group(2)))
             elif name == "temperature" and isinstance(v, int | float) and "newborn" not in fid:
-                temp.append(float(v))
-            elif name in tests and isinstance(v, str):
-                tests[name][v] += 1
+                w["temp"].append(float(v))
+            elif name in ("hiv", "syphilis", "hbsag") and isinstance(v, str):
+                w[name].append(v)
+    sys_ = [float(np.mean(w["sys"])) for w in per_woman.values() if w["sys"]]
+    dia = [float(np.mean(w["dia"])) for w in per_woman.values() if w["dia"]]
+    temp = [float(np.mean(w["temp"])) for w in per_woman.values() if w["temp"]]
+    tests = {}
+    for name in ("hiv", "syphilis", "hbsag"):
+        c = Counter()
+        for w in per_woman.values():
+            if w[name]:
+                c["positive" if "positive" in w[name] else "negative" if "negative" in w[name] else "not_done"] += 1
+        tests[name] = _tests(c, k)
+    women = len(per_woman)
     return {"women": women if women >= k or women == 0 else None,
             "n_bp": len(sys_), "systolic": _hist(sys_, SYS_BINS, k), "diastolic": _hist(dia, DIA_BINS, k),
             "mean_systolic": round(float(np.mean(sys_)), 1) if len(sys_) >= k else None,
             "mean_diastolic": round(float(np.mean(dia)), 1) if len(dia) >= k else None,
-            "n_temperature": len(temp), "temperature": _hist(temp, TEMP_BINS, k),
-            "tests": {name: _tests(c, k) for name, c in tests.items()}}
+            "n_temperature": len(temp), "temperature": _hist(temp, TEMP_BINS, k), "tests": tests}
 
 
 def _from_csv(path: Path, k: int) -> dict:
@@ -90,5 +105,5 @@ def _from_csv(path: Path, k: int) -> dict:
             "mean_diastolic": round(float(np.mean(dia)), 1), "tests": tests}
 
 
-def aggregates(records: list[dict], k: int = 5, csv_path: Path = CSV_PATH) -> dict:
+def aggregates(records: list[tuple[str, dict]], k: int = 5, csv_path: Path = CSV_PATH) -> dict:
     return {"k_anonymity": k, "registered": _from_records(records, k), "reference_csv": _from_csv(csv_path, k)}

@@ -69,7 +69,7 @@ The organisers' data must be in `data/` (`data/Paper Registry/…`, `data/matern
 make install        # Python environment
 make models         # ollama pull qwen3.5:9b && ollama pull glm-ocr
 make prepare        # ground truth from the specimen PDF + blank templates (≈ 30 s)
-make test           # 71 tests, no AI model needed (≈ 30 s)
+make test           # 75 tests, no AI model needed (≈ 30 s)
 make demo-offline   # phone http://127.0.0.1:8000 (starts offline) + server http://127.0.0.1:8100/dashboard
 ```
 
@@ -94,7 +94,7 @@ src/dayone/
   server/                processing server, role-based image access, dashboard
   channels/whatsapp.py   WhatsApp Cloud API adapter (off by default)
   evaluation/            ground truth, capture simulator, multilingual pages, dataset, metrics, report
-tests/                   71 tests (offline chaos, end-to-end conversation, pixel pipeline, ...)
+tests/                   75 tests (offline chaos, end-to-end conversation, pixel pipeline, ...)
 docs/                    DESIGN, LIFECYCLE, EVALUATION (protocol), RESULTS, DEMO, WHATSAPP
 ```
 
@@ -119,5 +119,7 @@ docs/                    DESIGN, LIFECYCLE, EVALUATION (protocol), RESULTS, DEMO
   servers.
 * **Security is a prototype**: demo tokens instead of an identity provider, the PIN is fixed
   for the demo, no key rotation or remote wipe.
+* **Hepatitis C**: the specimen form has no hepatitis C row (it records HIV, syphilis and
+  Ag HBs); the dashboard shows hepatitis C from the reference CSV only.
 * **Out of scope by design**: no risk prediction, triage, diagnosis or treatment advice.
   Consistency rules only check that what is written is internally consistent.

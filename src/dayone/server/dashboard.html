@@ -37,7 +37,7 @@ function bars(hist, k) {
   return hist.map(h => `<div class="bar"><span>${h.bin}</span><span class="track"><span class="fill" style="display:block;width:${100*(h.count||0)/max}%"></span></span><span>${fmt(h.count,k)}</span></div>`).join("");
 }
 function tests(t, k) {
-  const rows = Object.entries(t).map(([name, c]) => `<tr><td>${{hiv:"VIH",syphilis:"Syphilis",hbsag:"Ag HBs (hépatite B)",hepatitis_c:"Hépatite C"}[name]||name}</td><td>${fmt(c.tested,k)}</td><td>${fmt(c.negative,k)}</td><td>${fmt(c.positive,k)}</td><td>${fmt(c.not_done,k)}</td></tr>`).join("");
+  const rows = Object.entries(t).map(([name, c]) => `<tr><td>${{hiv:"VIH",syphilis:"Syphilis",hbsag:"Ag HBs (hépatite B — le registre n'a pas de ligne hépatite C)",hepatitis_c:"Hépatite C"}[name]||name}</td><td>${fmt(c.tested,k)}</td><td>${fmt(c.negative,k)}</td><td>${fmt(c.positive,k)}</td><td>${fmt(c.not_done,k)}</td></tr>`).join("");
   return `<table><tr><th>Test</th><th>Total</th><th>Négatif</th><th>Positif</th><th>Non fait</th></tr>${rows}</table>`;
 }
 function section(title, d, k) {
@@ -46,7 +46,7 @@ function section(title, d, k) {
   <p class="muted">TA moyenne : ${fmt(d.mean_systolic,k)} / ${fmt(d.mean_diastolic,k)} mmHg</p>
   <h2>Systolique (mmHg)</h2>${bars(d.systolic,k)}<h2 style="margin-top:12px">Diastolique (mmHg)</h2>${bars(d.diastolic,k)}
   ${d.temperature ? `<h2 style="margin-top:12px">Température post-partum (°C)</h2>${bars(d.temperature,k)}` : ""}
-  <h2 style="margin-top:12px">Tests infectieux</h2>${tests(d.tests,k)}</div>`;
+  <h2 style="margin-top:12px">Tests infectieux (par femme)</h2>${tests(d.tests,k)}</div>`;
 }
 async function load() {
   $("#status").textContent = "chargement…";

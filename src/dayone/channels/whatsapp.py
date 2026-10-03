@@ -100,15 +100,17 @@ def parse_webhook(body: dict) -> list[tuple[str, dict]]:
     for entry in body.get("entry", []):
         for change in entry.get("changes", []):
             for msg in change.get("value", {}).get("messages", []):
-                sender, typ = msg.get("from"), msg.get("type")
+                sender, typ, mid = msg.get("from"), msg.get("type"), msg.get("id")
                 if typ == "text":
-                    out.append((sender, {"type": "text", "text": msg["text"]["body"]}))
+                    out.append((sender, {"type": "text", "text": msg["text"]["body"], "message_id": mid}))
                 elif typ == "interactive":
                     inter = msg["interactive"]
                     reply = inter.get("button_reply") or inter.get("list_reply") or {}
-                    out.append((sender, {"type": "button", "id": reply.get("id"), "title": reply.get("title")}))
+                    out.append((sender, {"type": "button", "id": reply.get("id"), "title": reply.get("title"),
+                                         "message_id": mid}))
                 elif typ == "image":
-                    out.append((sender, {"type": "image", "media_id": msg["image"]["id"], "text": "📷 photo"}))
+                    out.append((sender, {"type": "image", "media_id": msg["image"]["id"], "text": "📷 photo",
+                                         "message_id": mid}))
     return out
 
 
@@ -141,6 +143,7 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None) ->
     """``agent_for(midwife_id)`` returns the Agent of that midwife."""
     client = client or CloudClient(cfg)
     r = APIRouter()
+    seen: dict[str, None] = {}  # ids of messages already handled (insertion-ordered, bounded)
 
     @r.get("/whatsapp/webhook", response_class=PlainTextResponse)
     def verify(request: Request) -> str:
@@ -155,6 +158,13 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None) ->
         if not valid_signature(cfg.app_secret, raw, request.headers.get("X-Hub-Signature-256")):
             raise HTTPException(401, "bad signature")
         for sender, event in parse_webhook(await request.json()):
+            mid = event.pop("message_id", None)
+            if mid is not None:
+                if mid in seen:  # Meta re-delivers webhooks: handle each message once
+                    continue
+                seen[mid] = None
+                while len(seen) > 5000:
+                    seen.pop(next(iter(seen)))
             midwife = cfg.allowed_senders.get(sender)
             if midwife is None:  # unknown number: never processed, never stored
                 log.warning("message from an unregistered number ignored")
