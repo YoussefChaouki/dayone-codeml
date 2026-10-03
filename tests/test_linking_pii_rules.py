@@ -73,3 +73,23 @@ def test_two_ticks_in_a_single_choice_group_are_flagged():
               "delivery.newborn_status.stillborn": _f("delivery.newborn_status.stillborn", True, source="checkbox")}
     apply_rules(PageType.DELIVERY, fields)
     assert "several_options_ticked" in fields["delivery.newborn_status.alive"].flags
+
+
+from hypothesis import given, settings  # noqa: E402
+from hypothesis import strategies as st  # noqa: E402
+
+from dayone.extraction.normalize import parse_value  # noqa: E402
+from dayone.forms.layout import PAGE_FIELDS  # noqa: E402
+
+READINGS = st.one_of(st.text(max_size=12), st.sampled_from(["-/-", "12O/8O", "TA: ?/80", "?", "—", "31/02/2025",
+                                                             "1e9", "١٢/٨", "/", "120/", "/80", "999999999"]))
+
+
+@settings(max_examples=60, deadline=None)
+@given(page=st.sampled_from(list(PAGE_FIELDS)), readings=st.lists(READINGS, min_size=1, max_size=40))
+def test_rules_never_crash_on_any_reading(page, readings):
+    fields = {}
+    for spec, text in zip(PAGE_FIELDS[page], readings * (len(PAGE_FIELDS[page]) // len(readings) + 1), strict=False):
+        p = parse_value(spec, text)
+        fields[spec.id] = FieldResult(field_id=spec.id, status=p.status, value=p.value, source="ocr", flags=p.flags)
+    apply_rules(page, fields)  # must not raise

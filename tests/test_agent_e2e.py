@@ -192,3 +192,38 @@ def test_english_interface(phone):
     assert "Language: English" in phone.text(msgs)
     msgs = phone.tap("menu:new")
     assert "Photograph the registry pages" in phone.text(msgs)
+
+
+def test_crash_during_registration_rolls_back_everything(phone, monkeypatch):
+    rid = capture_offline(phone)
+    phone.net.online = True
+    phone.sync()
+    phone.tap(f"rev:start:{rid}")
+    phone.tap("f:confirm")
+    phone.tap("f:illegible")
+    phone.tap("rest:confirm")
+    phone.say("2026-823-001")
+    real = phone.store.transition
+
+    def dying(rid_, target, *a, **kw):
+        if target == S.REGISTERED:
+            raise RuntimeError("battery died")
+        return real(rid_, target, *a, **kw)
+
+    monkeypatch.setattr(phone.store, "transition", dying)
+    with pytest.raises(RuntimeError):
+        phone.tap("m:new")
+    monkeypatch.setattr(phone.store, "transition", real)
+    rec = phone.store.get_record(rid)
+    assert rec.state == S.VALIDATED and rec.patient_id is None  # nothing half-done
+    assert phone.store.list_patients() == {} and not phone.store.pending_jobs()
+
+
+def test_stale_buttons_are_refused(phone):
+    rid = capture_offline(phone)
+    msgs = phone.tap("m:new")  # a button from another step (e.g. still visible in WhatsApp)
+    assert "plus valable" in phone.text(msgs)
+    assert phone.store.get_record(rid).state == S.PENDING_AI and phone.store.list_patients() == {}
+    phone.tap("menu:manual")
+    phone.tap("rest:confirm")
+    assert all(r.state != S.REGISTERED for r in phone.store.list_records())

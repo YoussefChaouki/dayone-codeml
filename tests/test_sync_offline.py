@@ -116,20 +116,34 @@ def test_ai_unavailable_ends_in_manual_review(tmp_path):
 
     from dayone.server.app import create_app
 
-    extractor = FakeExtractor(fail_first=100)
+    extractor = FakeExtractor(fail_first=10)
     server = TestClient(create_app(tmp_path / "srv", extractor_factory=lambda: extractor))
     net = Network(online=True)
     store, engine, events = make_device(tmp_path / "d.db", server, net)
     rid, pids = capture(store, 1)
-    for _ in range(12):
+    for _ in range(30):
         engine.run_once()
         store.db.execute("UPDATE outbox SET next_attempt_at=0")
         try:
             wait_processed(server, pids, timeout=1.0)
         except TimeoutError:
             pass
+        if store.get_record(rid).state == S.MANUAL_REVIEW_REQUIRED:
+            break
     assert store.get_record(rid).state == S.MANUAL_REVIEW_REQUIRED
     assert "processing_failed" in events
+    # the model server is back: the midwife taps "retry" and the page is read
+    assert engine.retry_ai(rid, "sf-amina") == 1
+    for _ in range(10):
+        engine.run_once()
+        store.db.execute("UPDATE outbox SET next_attempt_at=0")
+        try:
+            wait_processed(server, pids, timeout=1.0)
+        except TimeoutError:
+            pass
+        if store.get_record(rid).state == S.AI_PROCESSED:
+            break
+    assert store.get_record(rid).state == S.AI_PROCESSED
 
 
 @settings(max_examples=25, deadline=None, suppress_health_check=[HealthCheck.function_scoped_fixture])
