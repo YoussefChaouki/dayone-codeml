@@ -184,7 +184,8 @@ REASONS = {
            "valeur hors des plages habituelles", "parity_exceeds_gravidity": "parité > gestité",
            "several_options_ticked": "plusieurs cases cochées", "date_unparsed": "date incomplète",
            "number_unparsed": "nombre illisible", "not_in_vocabulary": "mot inattendu",
-           "two_readers_disagree": "deux lectures différentes"},
+           "two_readers_disagree": "deux lectures différentes",
+           "repaired": "j'ai corrigé une erreur de lecture probable (virgule, unité ou barre)"},
     "en": {"edd_inconsistent_with_lmp": "EDD inconsistent with LMP", "post_term_inconsistent_with_edd":
            "post-term date inconsistent", "gest_age_inconsistent_with_dates": "gestational age inconsistent with "
            "dates", "visits_out_of_order": "visit dates out of order", "weight_jump_between_visits":
@@ -192,7 +193,8 @@ REASONS = {
            "value outside usual range", "parity_exceeds_gravidity": "parity > gravidity",
            "several_options_ticked": "several boxes ticked", "date_unparsed": "incomplete date",
            "number_unparsed": "unreadable number", "not_in_vocabulary": "unexpected word",
-           "two_readers_disagree": "two different readings"},
+           "two_readers_disagree": "two different readings",
+           "repaired": "I fixed a likely misreading (decimal point, unit or slash)"},
 }
 
 QUALITY = {

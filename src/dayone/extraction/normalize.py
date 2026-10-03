@@ -183,6 +183,44 @@ def parse_bp(text: str) -> tuple[int, int] | None:
     return sys_, dia
 
 
+def repair_number(text: str, n: float, spec: FieldSpec) -> float | None:
+    """Undo the systematic misreadings of handwritten numbers, if that lands in the plausible range.
+
+    * a lost decimal separator ("791" for 79.1 kg, "372" for 37.2 °C, "093" for 0.93 g/L);
+    * the unit "g" read as a trailing "9" ("36269" for 3626 g).
+    Repaired values are flagged so they are never auto-accepted without a closer look.
+    """
+    lo, hi = spec.plausible  # caller checked it is set
+    digits = re.sub(r"\D", "", text)
+    candidates = []
+    if spec.unit == "g" and digits.endswith("9") and len(digits) >= 4:
+        candidates.append(float(digits[:-1]))
+    if "." not in text and "," not in text and digits:
+        candidates += [float(digits) / 10, float(digits) / 100]
+    for c in candidates:
+        if lo <= c <= hi:
+            return c
+    return None
+
+
+def repair_bp(text: str) -> tuple[int, int] | None:
+    """Blood pressure whose separator was lost or read as a digit ("137192", "13792")."""
+    digits = re.sub(r"\D", "", text.translate(_ARABIC_DIGITS))
+    if not 4 <= len(digits) <= 7:
+        return None
+
+    def ok(s: int, d: int) -> bool:
+        return 70 <= s <= 220 and 40 <= d <= 140 and s > d
+
+    cands = []
+    for i in range(2, len(digits) - 1):
+        if digits[i] in "17" and len(digits) >= 6:  # the slash itself was read as 1 or 7
+            cands.append((int(digits[:i]), int(digits[i + 1:])))
+        cands.append((int(digits[:i]), int(digits[i:])))
+    good = [c for c in cands if ok(*c)]
+    return good[0] if good else None
+
+
 def special_status(text: str) -> FieldStatus | None:
     """Status implied by the text itself, independently of the field type."""
     key = fold(text)
@@ -211,6 +249,9 @@ def parse_value(spec: FieldSpec, raw: str | None) -> Parsed:
     if vt == ValueType.BP:
         bp = parse_bp(text)
         if bp is None:
+            repaired = repair_bp(text)
+            if repaired is not None:
+                return Parsed(K, f"{repaired[0]}/{repaired[1]}", flags=["repaired"])
             return Parsed(K, text, ok=False, flags=["bp_unparsed"])
         flags = [] if (60 <= bp[0] <= 250 and 30 <= bp[1] <= 150 and bp[0] > bp[1]) else ["bp_implausible"]
         return Parsed(K, f"{bp[0]}/{bp[1]}", flags=flags)
@@ -222,10 +263,15 @@ def parse_value(spec: FieldSpec, raw: str | None) -> Parsed:
             if canon == "none" and vt == ValueType.INT:
                 return Parsed(K, 0, lexicon_score=score)
             return Parsed(K, text, ok=False, flags=["number_unparsed"])
-        value: Any = int(round(n)) if vt == ValueType.INT else round(n, 2)
         flags = []
         if spec.plausible and not (spec.plausible[0] <= n <= spec.plausible[1]):
-            flags.append("out_of_range")
+            repaired = repair_number(text, n, spec)
+            if repaired is None:
+                flags.append("out_of_range")
+            else:
+                n = repaired
+                flags.append("repaired")
+        value: Any = int(round(n)) if vt == ValueType.INT else round(n, 2)
         return Parsed(K, value, flags=flags)
     if vt == ValueType.BOOL:
         canon, score = match_vocab(text, "bool")
