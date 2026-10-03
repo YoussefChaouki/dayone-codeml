@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import subprocess
 import time
 from pathlib import Path
 
@@ -44,6 +45,16 @@ def main() -> None:
     out = args.eval_dir / "runs" / args.run
     out.mkdir(parents=True, exist_ok=True)
     extractor = Extractor(PipelineConfig())
+    commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+    dirty = bool(subprocess.run(["git", "status", "--porcelain", "src"], capture_output=True, text=True).stdout.strip())
+    meta = out / "_meta.json"
+    runs = json.loads(meta.read_text()) if meta.exists() else []
+    runs.append({"started_at": time.strftime("%Y-%m-%d %H:%M:%S"), "git_commit": commit, "src_dirty": dirty,
+                 "primary_model": extractor.primary.model,
+                 "second_model": extractor.second.model if extractor.second else None})
+    meta.write_text(json.dumps(runs, indent=1))
+    if dirty:
+        log.warning("src/ has uncommitted changes: this run is not reproducible from a commit")
     t0 = time.time()
     done, failed = 0, []
     for k, item in enumerate(items):
