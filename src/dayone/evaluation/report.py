@@ -41,36 +41,53 @@ def outcomes_for(pairs: list[tuple[dict, PageExtraction]], model: ConfidenceMode
     return out
 
 
-def calibrate(eval_dir: Path, run: str, model_path: Path) -> ConfidenceModel:
-    pairs = [(i, p) for i, p in load_items(eval_dir, run) if i["split"] == "calib"]
-    if not pairs:
-        raise SystemExit("no calibration predictions: run `make eval` first")
-    # Training rows: every OCR reading of the calibration split, labelled right / wrong.
-    cfg = PipelineConfig()
+def _readings(pairs: list[tuple[dict, PageExtraction]], cfg: PipelineConfig) -> tuple[np.ndarray, np.ndarray]:
+    """Every OCR reading of ``pairs`` as (features, right/wrong)."""
     neutral = ConfidenceModel.default()
     xs, ys = [], []
     for item, pred in pairs:
-        scored = rescore(pred, neutral, cfg)  # recomputes rule flags into the features
+        scored = rescore(pred, neutral, cfg)  # recomputes parse features and rule flags
         for o in compare(item, scored):
             f = scored.fields.get(o.field_id)
             if f is not None and f.source == "ocr":
                 xs.append(feature_vector(f.features))
                 ys.append(o.correct)
-    x, y = np.array(xs), np.array(ys)
+    return np.array(xs), np.array(ys)
+
+
+def calibrate(eval_dir: Path, run: str, model_path: Path) -> ConfidenceModel:
+    pairs = [(i, p) for i, p in load_items(eval_dir, run) if i["split"] == "calib"]
+    if not pairs:
+        raise SystemExit("no calibration predictions: run `make eval` first")
+    cfg = PipelineConfig()
+    x, y = _readings(pairs, cfg)
     model = fit(x, y)
-    # Rule 2: smallest τ with silent error <= 2 % on calibration (clean/mild/medium).
+    # Rule 2: smallest τ with silent error <= 2 % on calibration (clean/mild/medium). To avoid choosing
+    # τ on readings the model was fitted on, τ is chosen on out-of-fold predictions: leave-one-patient-out.
     usable = [(i, p) for i, p in pairs if i["level"] != "severe"]
+    patients = sorted({i["patient"] for i, _ in pairs})
+    fold_models = {}
+    for pat in patients:
+        xt, yt = _readings([(i, p) for i, p in pairs if i["patient"] != pat], cfg)
+        fold_models[pat] = fit(xt, yt)
+    taus = np.round(np.arange(0.50, 0.995, 0.01), 2)
     chosen = None
-    for tau in np.round(np.arange(0.50, 0.995, 0.01), 2):
-        cfg_t = PipelineConfig(accept_threshold=float(tau))
-        summ = summarise(outcomes_for(usable, model, cfg_t))
-        if summ["silent_error_rate"] is not None and summ["silent_error_rate"] <= TARGET_SILENT_ERROR:
+    for tau in taus:
+        outcomes = []
+        for pat, fm in fold_models.items():
+            outcomes += outcomes_for([(i, p) for i, p in usable if i["patient"] == pat], fm,
+                                     PipelineConfig(accept_threshold=float(tau)))
+        rate = summarise(outcomes)["silent_error_rate"]
+        if rate is not None and rate <= TARGET_SILENT_ERROR:
             chosen = float(tau)
             break
+    if chosen is None:
+        log.warning("target silent error <= %.0f %% NOT reached on calibration even at τ=0.99", 100 * TARGET_SILENT_ERROR)
     model.accept_threshold = chosen if chosen is not None else 0.99
+    model.target_reached = chosen is not None
     model.save(model_path)
-    log.info("confidence model fitted on %d readings (%.1f%% correct); threshold τ=%.2f -> %s",
-             len(y), 100 * y.mean(), model.accept_threshold, model_path)
+    log.info("confidence model fitted on %d readings (%.1f%% correct); τ=%.2f chosen out-of-fold (%d patients) -> %s",
+             len(y), 100 * y.mean(), model.accept_threshold, len(patients), model_path)
     return model
 
 
@@ -170,7 +187,9 @@ def render_markdown(r: dict, figs: list[str]) -> str:
         f"| **Extraction accuracy** (value right, before review) | **{_pct(hw['accuracy'])}** |",
         f"| Auto-accepted without review | {_pct(hw['auto_accepted_share'])} |",
         f"| Accuracy of auto-accepted values | {_pct(hw['accuracy_when_auto_accepted'])} |",
-        f"| **Silent error rate** (wrong *and* not flagged) | **{_pct(o['silent_error_rate'])}** |",
+        f"| **Silent error rate** (handwritten value wrong *and* no question asked) | **{_pct(o['silent_error_rate'])}** |",
+        f"| Silent error rate over every field (text, blanks, dashes, tick boxes) | {_pct(o['all_fields_silent_error_rate'])} |",
+        f"| Fields the midwife is asked about (all fields) | {_pct(o['all_fields_review_share'])} |",
         f"| Sent to the midwife for review / marked illegible | {_pct(hw['flagged_for_review_share'])} |",
         f"| Blank fields recognised as blank | {_pct(o['blank']['accuracy'])} (n={o['blank']['n']}) |",
         f"| Dashes recognised as not applicable | {_pct(o['dash']['accuracy'])} (n={o['dash']['n']}) |",

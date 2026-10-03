@@ -69,7 +69,9 @@ def compare(item: dict, pred: PageExtraction) -> list[FieldOutcome]:
         out.append(FieldOutcome(
             item=item["id"], field_id=fid, kind=spec.kind.value, gt_status=gt_status.value,
             pred_status=pred_status, correct=bool(correct),
-            accepted=ps in (FieldStatus.KNOWN, FieldStatus.NOT_PROVIDED, FieldStatus.NOT_APPLICABLE, FieldStatus.UNKNOWN),
+            # accepted = the agent did not ask the midwife about this field
+            accepted=p is not None and p.status not in (FieldStatus.NEEDS_REVIEW, FieldStatus.ILLEGIBLE)
+            and "confirm_special" not in p.flags,
             confidence=conf, level=item["level"],
             language=item["languages"].get(fid, "fr") if item["kind"] == "synth" else "fr",
             page_type=item["page_type"], value_type=spec.value_type.value, split=item["split"], source=source))
@@ -113,15 +115,15 @@ def summarise(outcomes: list[FieldOutcome]) -> dict:
     blank = [o for o in outcomes if o.kind == "text" and o.gt_status == "NOT_PROVIDED"]
     dash = [o for o in outcomes if o.kind == "text" and o.gt_status == "NOT_APPLICABLE"]
     boxes = [o for o in outcomes if o.kind == "checkbox"]
-    accepted = [o for o in hw if o.pred_status == "KNOWN"]
+    accepted = [o for o in hw if o.accepted]
     ocr = [o for o in outcomes if o.source == "ocr"]
     res = {
         "n_fields": len(outcomes),
         "all_fields_accuracy": rate([o.correct for o in outcomes]),
         "handwritten": {"n": len(hw), "accuracy": rate([o.correct for o in hw]),
-                        "auto_accepted_share": rate([o.pred_status == "KNOWN" for o in hw]),
+                        "auto_accepted_share": rate([o.accepted for o in hw]),
                         "accuracy_when_auto_accepted": rate([o.correct for o in accepted]),
-                        "flagged_for_review_share": rate([o.pred_status in ("NEEDS_REVIEW", "ILLEGIBLE") for o in hw]),
+                        "flagged_for_review_share": rate([not o.accepted for o in hw]),
                         "missed_as_blank_share": rate([o.pred_status in ("NOT_PROVIDED", "NOT_APPLICABLE") for o in hw])},
         "silent_error_rate": rate([not o.correct for o in accepted]),
         "all_fields_silent_error_rate": rate([not o.correct for o in outcomes if o.accepted]),
@@ -129,7 +131,7 @@ def summarise(outcomes: list[FieldOutcome]) -> dict:
         "blank": {"n": len(blank), "accuracy": rate([o.correct for o in blank])},
         "dash": {"n": len(dash), "accuracy": rate([o.correct for o in dash])},
         "checkbox": {"n": len(boxes), "accuracy": rate([o.correct for o in boxes]),
-                     "silent_error_rate": rate([not o.correct for o in boxes if o.pred_status == "KNOWN"])},
+                     "silent_error_rate": rate([not o.correct for o in boxes if o.accepted])},
     }
     if ocr:
         conf = np.array([o.confidence for o in ocr])
@@ -147,9 +149,9 @@ def breakdown(outcomes: list[FieldOutcome], key: str) -> dict[str, dict]:
     out = {}
     for k, v in sorted(groups.items()):
         hw = handwritten(v)
-        acc = [o for o in hw if o.pred_status == "KNOWN"]
+        acc = [o for o in hw if o.accepted]
         out[k] = {"n_handwritten": len(hw), "accuracy": rate([o.correct for o in hw]),
-                  "auto_accepted_share": rate([o.pred_status == "KNOWN" for o in hw]),
+                  "auto_accepted_share": rate([o.accepted for o in hw]),
                   "silent_error_rate": rate([not o.correct for o in acc]),
                   "all_fields_accuracy": rate([o.correct for o in v])}
     return out

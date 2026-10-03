@@ -13,12 +13,12 @@ and does its confidence tell the midwife *which* fields to check?
 * **Source**: the organisers' specimen PDF (10 fictitious patients x 8 pages). Ground truth
   is extracted automatically from the PDF itself: handwritten values are text set in
   handwriting fonts, tick marks are vector strokes in a pen colour
-  (`src/dayone/evaluation/groundtruth.py`). 6,010 fields, 2,032 handwritten values,
-  129 dashes, 306 ticked boxes. Every handwritten string is assigned to a field of the
+  (`src/dayone/evaluation/groundtruth.py`). 6,010 fields, 2,032 written fields (of which
+  129 dashes), 468 ticked boxes. Every handwritten string is assigned to a field of the
   layout, except the direct identifiers (name, ID number, phone, address, husband) and
   professions, which are deliberately not part of the schema.
-* **Duplicates**: 44 of the 132 provided PNG files are byte-identical copies (Drive
-  suffixes). They are removed by hash before anything else.
+* **Duplicates**: the 124 provided PNG files hold 80 distinct pages; 44 are byte-identical
+  copies (Drive suffixes). They are removed by hash before anything else.
 * **Captures**: the PNGs are clean renders, so field conditions are simulated
   (`degrade.py`, seeded): `clean`, `mild` (camera photo ≈ 2000-2400 px long side),
   `medium` (WhatsApp-compressed ≈ 1600 px, shadows, low light — the organisers' real
@@ -40,8 +40,9 @@ and does its confidence tell the midwife *which* fields to check?
 * **Tick boxes** — accuracy of ticked / not ticked.
 * **Uncertainty**:
   * *auto-acceptance coverage*: share of handwritten fields accepted without review (KNOWN);
-  * *silent error rate*: share of KNOWN fields whose value is wrong (the agent was wrong
-    **and** did not say so) — the number the jury criterion "never hides its doubts" maps to;
+  * *silent error rate*: among handwritten fields the agent did **not** ask about (accepted as
+    a value, or as blank / not applicable / unknown), the share that is wrong — the agent was
+    wrong **and** did not say so; also reported over every field (blanks, dashes, tick boxes);
   * *calibration*: expected calibration error (10 bins), Brier score, AUROC of the
     confidence for separating right from wrong readings, reliability table;
   * *risk-coverage curve* as the acceptance threshold varies.
@@ -53,8 +54,10 @@ and does its confidence tell the midwife *which* fields to check?
 
 1. The confidence model is fitted on the calibration split only.
 2. The acceptance threshold τ is the **smallest** threshold whose silent error rate on
-   the calibration split (levels clean/mild/medium, all languages) is ≤ **2 %**.
-   It is then frozen and applied to the test split.
+   the calibration split (levels clean/mild/medium, all languages) is ≤ **2 %**, computed on
+   **out-of-fold** confidences (leave-one-patient-out) so that τ is not chosen on readings the
+   model was fitted on. It is then frozen and applied to the test split. If no τ ≤ 0.99 reaches
+   the target, τ = 0.99 and the report says the target was not reached.
 3. The test split is used once for the final report; no parameter is changed afterwards.
    If a bug is found after the report, it is fixed, the whole calibration → test
    sequence is re-run and the change is logged in section 6.
@@ -66,7 +69,7 @@ and does its confidence tell the midwife *which* fields to check?
 ```bash
 make prepare      # ground truth + templates
 make dataset      # simulated captures (seeded)
-make eval         # extraction on every capture (local models, resumable, ~1.5 h on an M4 Pro)
+make eval         # extraction on every capture (local models, resumable, ~3-4 h on an M4 Pro)
 make calibrate    # fit the confidence model + threshold on the calibration split
 make report       # metrics on the test split -> docs/RESULTS.md
 ```
@@ -86,7 +89,27 @@ make report       # metrics on the test split -> docs/RESULTS.md
 
 ## 7. Change log
 
-* 2026-10-03 — first run interrupted twice by an Ollama runner hang (glm-ocr); the run is
-  resumable, items already predicted were kept. The second reader was made optional
-  (timeout + circuit breaker) during the run: items predicted before/after differ only if
-  the second reader failed, which is recorded per field (`second_missing`).
+All entries below were written **before** any metric of the final run was computed.
+
+* 2026-10-03 — **first run (`main`) discarded.** It was interrupted twice by an Ollama
+  runner hang (glm-ocr) and, while it was paused, the extraction changed. Everything is
+  re-run from scratch as run `final` with the code frozen at the commit recorded in
+  `artifacts/eval/runs/final/_meta.json`. Changes since the protocol was written:
+  * second reader made optional (timeout + circuit breaker; recorded as `second_missing`);
+  * crops located from the ink itself (value boxes) instead of the raw field rectangle,
+    because 1-3 pt of registration error made crops catch the neighbouring row; table
+    borders are ignored when deciding whether a field is blank;
+  * small crops padded to 64 px (the vision model rejects images under 32 px);
+  * repairs of systematic misreadings (lost decimal point, unit "g" read as "9", lost BP
+    slash), permissive vocabulary snapping for words of ≤ 4 letters ("eAs" → RAS);
+  * any repaired value or consistency-rule flag now forces a review; uncertain dashes /
+    question marks are confirmed with the midwife; phone / ID patterns scrubbed from OCR text;
+  * the silent-error definition (§3) and the choice of τ (§4 rule 2) were amended as above
+    after an adversarial code review pointed out that the first definition only counted
+    values accepted as KNOWN and that τ was chosen on the fitting data.
+* **What was looked at before the final run.** Development used the calibration split
+  (patients 1-5), with three exceptions, disclosed here: (1) an early OCR comparison script
+  printed the reading errors of one test-split page (page 43, patient 6, clean); (2) page
+  classification / registration statistics were computed on all 80 pages (see §6);
+  (3) after adding the repairs, ground truth was re-generated for all pages to check that it
+  did not change (it did not) — no prediction or metric was computed on the test split.
