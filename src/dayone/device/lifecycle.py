@@ -40,16 +40,17 @@ S = RecordState
 TRANSITIONS: dict[RecordState, set[RecordState]] = {
     S.CAPTURED: {S.PENDING_AI, S.MANUAL_REVIEW_REQUIRED},
     S.PENDING_AI: {S.AI_PROCESSED, S.PROCESSING_FAILED, S.MANUAL_REVIEW_REQUIRED},
-    S.PROCESSING_FAILED: {S.PENDING_AI, S.MANUAL_REVIEW_REQUIRED},
+    S.PROCESSING_FAILED: {S.MANUAL_REVIEW_REQUIRED},  # jobs are retried while PENDING_AI; this is final
     S.AI_PROCESSED: {S.NEEDS_REVIEW, S.PENDING_AI},
     S.NEEDS_REVIEW: {S.VALIDATED, S.PENDING_AI, S.MANUAL_REVIEW_REQUIRED},  # PENDING_AI: a page was retaken
-    S.MANUAL_REVIEW_REQUIRED: {S.VALIDATED, S.PENDING_AI},
+    # PENDING_AI: "retry the AI"; NEEDS_REVIEW: fields read by the AI before it failed remain to review
+    S.MANUAL_REVIEW_REQUIRED: {S.VALIDATED, S.PENDING_AI, S.NEEDS_REVIEW},
     S.VALIDATED: {S.PATIENT_MATCHED, S.DUPLICATE_SUSPECTED, S.MANUAL_REVIEW_REQUIRED, S.NEEDS_REVIEW},
     S.DUPLICATE_SUSPECTED: {S.PATIENT_MATCHED, S.MANUAL_REVIEW_REQUIRED},
     S.PATIENT_MATCHED: {S.REGISTERED},
     S.REGISTERED: {S.SYNCED, S.SYNC_FAILED},
-    S.SYNC_FAILED: {S.SYNCED, S.SYNC_FAILED, S.REGISTERED},
-    S.SYNCED: {S.REGISTERED},  # a later correction re-opens synchronisation
+    S.SYNC_FAILED: {S.SYNCED},
+    S.SYNCED: set(),  # corrections after synchronisation are out of the prototype's scope
 }
 
 # States from which the record still needs the network (outbox work pending).

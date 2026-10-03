@@ -22,6 +22,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "page_ok": "✅ Page reçue : *{page}* ({n} page(s) dans cette fiche).\n🔒 Nom et identifiants masqués, "
                    "photo chiffrée sur le téléphone.",
         "page_replaced": "♻️ Elle remplace la photo précédente de cette page.",
+        "wrong_page": "❌ Cette photo montre la page *{found}*, pas la page *{expected}* attendue. Elle n'a pas été "
+                      "enregistrée. Envoyez une photo de la page *{expected}*.",
         "no_pages": "Aucune page reçue pour l'instant. Envoyez une photo, ou *Annuler*.",
         "queued_online": "⏳ Fiche enregistrée ({n} page(s)). Lecture automatique en cours… Je vous préviens dès "
                          "que c'est prêt.",
@@ -32,6 +34,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "processed": "🤖 La fiche du {date} a été lue : *{total}* champs, dont *{sure}* lus avec confiance et "
                      "*{doubt}* sur lesquels j'ai un doute.",
         "btn_review_now": "🔎 Vérifier maintenant", "btn_later": "Plus tard",
+        "btn_retry_ai": "🔁 Relancer la lecture",
         "processing_failed": "⚠️ Je n'ai pas pu lire la fiche du {date} ({reason}). Elle reste enregistrée. "
                              "Vous pouvez la saisir à la main.",
         "review_field": "❓ ({k}/{n}) *{label}* — page {page}\nJe lis : *{value}*, mais je ne suis pas sûre "
@@ -51,6 +54,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "crop_caption": "Voici la zone lue pour *{label}*.",
         "rest_intro": "👍 Plus de doute. Voici ce que j'ai lu avec confiance ({n} champs) :",
         "rest_more": "… et {n} autres champs (*détail* pour tout voir).",
+        "rest_empty": "(dont {blank} cases laissées vides et {na} marquées « non applicable », p. ex. par un tiret)",
         "btn_confirm_all": "✅ Tout confirmer", "btn_fix_one": "✏️ Corriger un champ", "btn_detail": "📄 Détail",
         "pick_field": "Tapez le *numéro* du champ à corriger :\n{list}",
         "validated": "✅ Fiche validée ({n} champs).",
@@ -88,6 +92,9 @@ STRINGS: dict[str, dict[str, str]] = {
         "nothing_to_review": "Aucune fiche à vérifier pour l'instant.",
         "busy_capture": "Vous êtes en train de photographier une fiche. Envoyez une photo ou touchez *Terminer*.",
         "lang_set": "Langue : français 🇫🇷",
+        "photo_lost": "L'application a redémarré : cette photo n'a pas été gardée (elle n'était pas encore masquée). "
+                      "Reprenez-la.",
+        "stale_button": "Ce bouton n'est plus valable : la conversation a avancé. Voici où nous en sommes.",
         "unknown": "Je n'ai pas compris. Tapez *aide* pour la liste des commandes.",
     },
     "en": {
@@ -109,6 +116,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "page_ok": "✅ Page received: *{page}* ({n} page(s) in this record).\n🔒 Name and identifiers masked, "
                    "photo encrypted on the phone.",
         "page_replaced": "♻️ It replaces the previous photo of this page.",
+        "wrong_page": "❌ This photo shows the page *{found}*, not the expected page *{expected}*. It was not saved. "
+                      "Send a photo of the page *{expected}*.",
         "no_pages": "No page received yet. Send a photo, or *Cancel*.",
         "queued_online": "⏳ Record saved ({n} page(s)). Automatic reading in progress… I will tell you when it is ready.",
         "queued_offline": "📴 No network: the record is *saved and encrypted* on the phone ({n} page(s)), state "
@@ -117,6 +126,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "processed": "🤖 The record of {date} has been read: *{total}* fields, *{sure}* read with confidence and "
                      "*{doubt}* I am unsure about.",
         "btn_review_now": "🔎 Review now", "btn_later": "Later",
+        "btn_retry_ai": "🔁 Retry reading",
         "processing_failed": "⚠️ I could not read the record of {date} ({reason}). It is still saved. You can type "
                              "it in.",
         "review_field": "❓ ({k}/{n}) *{label}* — page {page}\nI read: *{value}*, but I am not sure "
@@ -135,6 +145,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "crop_caption": "Here is the area I read for *{label}*.",
         "rest_intro": "👍 No more doubts. Here is what I read with confidence ({n} fields):",
         "rest_more": "… and {n} more fields (*detail* to see all).",
+        "rest_empty": "(including {blank} fields left blank and {na} marked \"not applicable\", e.g. with a dash)",
         "btn_confirm_all": "✅ Confirm all", "btn_fix_one": "✏️ Fix a field", "btn_detail": "📄 Detail",
         "pick_field": "Type the *number* of the field to fix:\n{list}",
         "validated": "✅ Record validated ({n} fields).",
@@ -172,6 +183,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "nothing_to_review": "Nothing to review for now.",
         "busy_capture": "You are photographing a record. Send a photo or tap *Done*.",
         "lang_set": "Language: English 🇬🇧",
+        "photo_lost": "The app restarted: that photo was not kept (it was not masked yet). Please take it again.",
+        "stale_button": "This button is no longer valid: the conversation has moved on. Here is where we are.",
         "unknown": "I did not understand. Type *help* for the list of commands.",
     },
 }

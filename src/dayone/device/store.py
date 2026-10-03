@@ -99,6 +99,7 @@ class DeviceStore:
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.execute("PRAGMA foreign_keys=ON")
         self.lock = threading.RLock()
+        self._depth = 0
         self.db.executescript(SCHEMA)
         row = self.db.execute("SELECT value FROM meta WHERE key='salt'").fetchone()
         if row is None:
@@ -115,21 +116,30 @@ class DeviceStore:
 
     # -- helpers -------------------------------------------------------------
     def _tx(self):
+        """Transaction context; nested uses join the outermost transaction (one atomic commit)."""
         store = self
 
         class _Tx:
             def __enter__(self):
                 store.lock.acquire()
-                store.db.execute("BEGIN IMMEDIATE")
+                store._depth += 1
+                if store._depth == 1:
+                    store.db.execute("BEGIN IMMEDIATE")
 
             def __exit__(self, exc_type, exc, tb):
                 try:
-                    store.db.execute("COMMIT" if exc_type is None else "ROLLBACK")
+                    if store._depth == 1:
+                        store.db.execute("COMMIT" if exc_type is None else "ROLLBACK")
                 finally:
+                    store._depth -= 1
                     store.lock.release()
                 return False
 
         return _Tx()
+
+    def atomic(self):
+        """Group several store operations into one transaction (all or nothing on a crash)."""
+        return self._tx()
 
     def _enc(self, obj: Any, aad: str) -> bytes:
         return self.cipher.encrypt(json.dumps(obj, ensure_ascii=False, default=str).encode(), aad.encode())

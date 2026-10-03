@@ -93,16 +93,20 @@ def merge_extraction(payload: dict, page_id: str, extraction: dict) -> None:
         payload.setdefault("page_types", {})[pt] = page_id
 
 
+def needs_review(e: dict) -> bool:
+    return e.get("source") not in HUMAN_SOURCES and (
+        e.get("status") in REVIEW_STATUSES or "confirm_special" in e.get("flags", []))
+
+
 def review_queue(payload: dict) -> list[str]:
     """Doubtful machine fields, in booklet order."""
-    out = [fid for fid, e in payload.get("fields", {}).items()
-           if e.get("source") not in HUMAN_SOURCES and e.get("status") in REVIEW_STATUSES]
+    out = [fid for fid, e in payload.get("fields", {}).items() if needs_review(e)]
     return sorted(out, key=lambda f: _ORDER.get(f, 1 << 30))
 
 
 def confident_fields(payload: dict, page_type: str | None = None) -> list[str]:
     out = [fid for fid, e in payload.get("fields", {}).items()
-           if e.get("source") not in HUMAN_SOURCES and e.get("status") not in REVIEW_STATUSES
+           if e.get("source") not in HUMAN_SOURCES and not needs_review(e)
            and (page_type is None or fid.startswith(page_type + "."))]
     return sorted(out, key=lambda f: _ORDER.get(f, 1 << 30))
 

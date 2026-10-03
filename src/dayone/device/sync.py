@@ -25,7 +25,8 @@ from dayone.records import merge_extraction
 
 log = logging.getLogger(__name__)
 
-MAX_PROCESSING_ATTEMPTS = 4
+MAX_PROCESSING_ATTEMPTS = 4  # server errors
+MAX_AI_UNAVAILABLE_ATTEMPTS = 10  # model server down: back-off 2, 4, ... 600 s, i.e. ~30 min before giving up
 POLL_DELAY_S = 1.5
 
 
@@ -117,6 +118,13 @@ class SyncEngine:
                 if page.status in ("stored", "uploaded"):
                     self.store.enqueue("process_page", page.id, f"process:{page.id}")
                     n += 1
+        for rec in self.store.list_records({RecordState.PENDING_AI}):
+            if self._settle_record(rec.id):  # every page already answered before the crash
+                n += 1
+        for rec in self.store.list_records({RecordState.PATIENT_MATCHED}):  # defensive: older app versions
+            self.store.transition(rec.id, RecordState.REGISTERED, self.actor, "recovered after restart",
+                                  enqueue=("sync_record", rec.id, f"sync:{rec.id}:{rec.version}"))
+            n += 1
         for rec in self.store.list_records({RecordState.REGISTERED, RecordState.SYNC_FAILED}):
             self.store.enqueue("sync_record", rec.id, f"sync:{rec.id}:{rec.version}")
             n += 1
@@ -144,11 +152,11 @@ class SyncEngine:
         return done
 
     def _backoff(self, attempts: int) -> float:
-        return min(60.0, 2.0 ** attempts)
+        return min(600.0, 2.0 ** attempts)
 
     def _on_server_error(self, job: Job, e: ServerError) -> None:
         attempts = self.store.job_retry(job.id, str(e), self._backoff(job.attempts + 1))
-        if job.kind == "sync_record":
+        if job.kind == "sync_record":  # sync is retried forever: the record is safe on the phone
             rec = self.store.get_record(job.ref)
             if rec.state == RecordState.REGISTERED:
                 self.store.transition(rec.id, RecordState.SYNC_FAILED, self.actor, str(e))
@@ -158,16 +166,39 @@ class SyncEngine:
 
     def _processing_failed(self, job: Job, reason: str) -> None:
         page = self.store.get_page(job.ref)
-        self.store.set_page_status(page.id, "failed")
-        self.store.job_done(job.id)
-        rec = self.store.get_record(page.record_id)
-        if rec.state == RecordState.PENDING_AI:
-            self.store.transition(rec.id, RecordState.PROCESSING_FAILED, self.actor, reason)
-        rec = self.store.get_record(page.record_id)
-        if rec.state == RecordState.PROCESSING_FAILED:
-            self.store.transition(rec.id, RecordState.MANUAL_REVIEW_REQUIRED, self.actor,
-                                  "AI processing failed repeatedly: manual entry")
-        self.notify("processing_failed", {"record_id": rec.id, "page_id": page.id, "reason": reason})
+        with self.store.atomic():  # page, job and record state change together
+            self.store.set_page_status(page.id, "failed")
+            self.store.job_done(job.id)
+            self._settle_record(page.record_id, reason)
+        self.notify("processing_failed", {"record_id": page.record_id, "page_id": page.id, "reason": reason})
+
+    def _settle_record(self, rid: str, reason: str = "") -> str | None:
+        """Once no page of a PENDING_AI record is in flight, move it on. Returns the outcome."""
+        rec = self.store.get_record(rid)
+        if rec.state != RecordState.PENDING_AI:
+            return None
+        pages = self.store.list_pages(rid)
+        if any(p.status in ("stored", "uploaded") for p in pages):
+            return None
+        if any(p.status == "failed" for p in pages):
+            self.store.transition(rid, RecordState.PROCESSING_FAILED, self.actor, reason or "a page could not be read")
+            self.store.transition(rid, RecordState.MANUAL_REVIEW_REQUIRED, self.actor,
+                                  "AI processing failed: manual entry or retry")
+            return "failed"
+        self.store.transition(rid, RecordState.AI_PROCESSED, self.actor, "all pages read")
+        return "processed"
+
+    def retry_ai(self, rid: str, actor: str) -> int:
+        """Send the pages that failed back to the AI (midwife's "retry" after an outage)."""
+        failed = [p for p in self.store.list_pages(rid) if p.status == "failed"]
+        if not failed:
+            return 0
+        with self.store.atomic():
+            for p in failed:
+                self.store.set_page_status(p.id, "uploaded")
+                self.store.enqueue("process_page", p.id, f"process:{p.id}:{int(time.time())}")
+            self.store.transition(rid, RecordState.PENDING_AI, actor, "AI reading retried")
+        return len(failed)
 
     # -- jobs ------------------------------------------------------------------------------
     def _process_page(self, job: Job) -> int:
@@ -185,25 +216,25 @@ class SyncEngine:
             return 0
         if status["status"] == "failed":
             error = status.get("error") or "failed"
-            if error.startswith("ai_unavailable") and job.attempts + 1 < MAX_PROCESSING_ATTEMPTS:
+            if error.startswith("ai_unavailable") and job.attempts + 1 < MAX_AI_UNAVAILABLE_ATTEMPTS:
                 self.store.job_retry(job.id, error, self._backoff(job.attempts + 1))
                 self.client.retry_page(page.id)
                 return 0
             self._processing_failed(job, error)
             return 0
         extraction = status["extraction"]
-        with self.store.lock:  # page result + record merge + transition: one consistent step
+        with self.store.atomic():  # page result + record merge + transition: one transaction
             self.store.set_page_extraction(page.id, extraction, extraction.get("page_type"))
             rec = self.store.get_record(page.record_id)
             payload = rec.payload
             merge_extraction(payload, page.id, extraction)
             self.store.update_record(rec.id, payload=payload)
             self.store.job_done(job.id)
-            remaining = [p for p in self.store.list_pages(rec.id) if p.status not in ("processed", "failed")]
-            if not remaining and rec.state == RecordState.PENDING_AI:
-                self.store.transition(rec.id, RecordState.AI_PROCESSED, self.actor, "all pages read")
-        if not remaining:
+            outcome = self._settle_record(rec.id)
+        if outcome == "processed":
             self.notify("processed", {"record_id": rec.id})
+        elif outcome == "failed":
+            self.notify("processing_failed", {"record_id": rec.id, "reason": "a page could not be read"})
         return 1
 
     def _sync_record(self, job: Job) -> int:

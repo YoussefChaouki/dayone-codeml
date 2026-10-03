@@ -75,14 +75,16 @@ def page_title(page_type: str | None, lang: str) -> str:
 
 class Agent:
     def __init__(self, store: DeviceStore, registrar: Registrar, midwife_id: str,
-                 is_online=lambda: False, kick_sync=lambda: None) -> None:
+                 is_online=lambda: False, kick_sync=lambda: None, retry_ai=None) -> None:
         self.store = store
         self.registrar = registrar
         self.midwife = midwife_id
         self.is_online = is_online
         self.kick_sync = kick_sync
+        self.retry_ai = retry_ai  # SyncEngine.retry_ai, wired by the app
         self.lock = threading.RLock()
         self.state = store.get("agent", {"lang": "fr", "mode": "idle"})
+        self._pending_image: bytes | None = None  # unmasked photo awaiting "keep anyway": memory only
 
     # ------------------------------------------------------------------ plumbing
     @property
@@ -125,7 +127,8 @@ class Agent:
             elif kind == "processing_failed":
                 rec = self.store.get_record(rid)
                 out = [_msg(self.tr("processing_failed", date=self._date(rec.created_at), reason=data.get("reason", "")),
-                            [(f"manual:record:{rid}", self.tr("btn_manual_short"))])]
+                            [(f"manual:record:{rid}", self.tr("btn_manual_short")),
+                             (f"ai:retry:{rid}", self.tr("btn_retry_ai"))])]
             elif kind == "synced":
                 out = [_msg(self.tr("synced"))]
                 if data.get("possible_duplicates"):
@@ -186,7 +189,26 @@ class Agent:
             return [_msg(self.tr("busy_capture"), [("cap:done", self.tr("btn_done")), ("cap:cancel", self.tr("btn_cancel"))])]
         return [_msg(self.tr("unknown"))] + self._menu(greet=False)
 
+    # A button is only valid in the step that offered it: in WhatsApp old buttons stay tappable.
+    BUTTON_MODES = {"cap": {"capture", "quality_pending"}, "q": {"quality_pending", "capture"}, "f": {"review"},
+                    "rest": {"rest", "pick_field"}, "m": {"match"}, "d": {"redigit"}}
+    MANUAL_ANSWERS = {"yes", "no", "skip", "end"}
+
+    def _stale(self, bid: str) -> bool:
+        head, _, arg = bid.partition(":")
+        mode = self.state.get("mode", "idle")
+        if head in self.BUTTON_MODES:
+            return mode not in self.BUTTON_MODES[head] and not bid.startswith("m:decide:")
+        if head == "manual":
+            if arg in self.MANUAL_ANSWERS:
+                return mode != "manual"
+            if arg.startswith(("page:", "visit:")) or arg in ("finish", "other"):
+                return mode != "manual_pick"
+        return False
+
     def _on_button(self, bid: str) -> list[dict]:
+        if self._stale(bid):
+            return [_msg(self.tr("stale_button"))] + self._menu(greet=False)
         head, _, arg = bid.partition(":")
         if bid == "menu:new":
             self._start_capture()
@@ -203,14 +225,14 @@ class Agent:
             return self._cancel()
         if bid == "q:retake":
             self.state["mode"] = "capture"
-            self.state.pop("pending_image", None)
+            self._pending_image = None
             return [_msg(self.tr("capture_start"))]
         if bid == "q:keep":
-            data = self.state.pop("pending_image", None)
+            data, self._pending_image = self._pending_image, None
             self.state["mode"] = "capture"
-            if data is None:
-                return []
-            return self._on_image(bytes.fromhex(data), force=True)
+            if data is None:  # the app restarted meanwhile: the unmasked photo was never kept
+                return [_msg(self.tr("photo_lost"))]
+            return self._on_image(data, force=True)
         if head == "rev":
             if arg.startswith("start"):
                 rid = arg.split(":", 1)[1] if ":" in arg else None
@@ -226,11 +248,19 @@ class Agent:
             return self._on_redigit_button(arg)
         if head == "manual":
             return self._on_manual_button(arg)
+        if head == "ai" and arg.startswith("retry:"):
+            rid = arg.split(":", 1)[1]
+            if self.store.get_record(rid).state != RecordState.MANUAL_REVIEW_REQUIRED or self.retry_ai is None:
+                return [_msg(self.tr("stale_button"))] + self._menu(greet=False)
+            n = self.retry_ai(rid, self.midwife)
+            key = "queued_online" if self.is_online() else "queued_offline"
+            return [_msg(self.tr(key, n=n))] + self._menu(greet=False)
         return [_msg(self.tr("unknown"))]
 
     # ------------------------------------------------------------------ menu / queue
     def _menu(self, greet: bool = True) -> list[dict]:
         self.state["mode"] = "idle"
+        self._pending_image = None
         buttons = [("menu:new", self.tr("btn_new")), ("menu:queue", self.tr("btn_queue")),
                    ("menu:manual", self.tr("btn_manual"))]
         n = len(self._records_to_review())
@@ -285,7 +315,9 @@ class Agent:
             return [_msg(self.tr("unknown"))]
         quality = assess_capture(img)
         if not quality.ok and not force:
-            self.state.update(mode="quality_pending", pending_image=data.hex())
+            # The photo is not masked yet: it is kept in memory only, never written to disk.
+            self._pending_image = data
+            self.state.update(mode="quality_pending")
             issues = "\n".join(f"• {QUALITY[self.lang][i]}" for i in quality.issues)
             return [_msg(self.tr("quality_bad", issues=issues),
                          [("q:retake", self.tr("btn_retake")), ("q:keep", self.tr("btn_keep"))])]
@@ -293,6 +325,9 @@ class Agent:
         reg = self.registrar.register(img, expected=PageType(retake) if retake else None)
         if not reg.ok:
             self.state["mode"] = "capture"
+            if reg.reason.startswith("unexpected_page") and retake:
+                return [_msg(self.tr("wrong_page", found=page_title(reg.page_type.value, self.lang),
+                                     expected=page_title(retake, self.lang)))]
             return [_msg(self.tr("page_unknown"), [("q:retake", self.tr("btn_retake")),
                                                   ("manual:start", self.tr("btn_manual_short"))])]
         redacted, zones = redact_capture(img, reg.homography, reg.page_type)
@@ -364,6 +399,8 @@ class Agent:
             self.store.transition(rid, RecordState.NEEDS_REVIEW, "agent", "presented to the midwife")
             rec = self.store.get_record(rid)
         if rec.state == RecordState.MANUAL_REVIEW_REQUIRED:
+            if rec.payload.get("match_undecided") and is_validated(rec.payload):
+                return [_msg(self.tr("match_unsure"), [(f"m:decide:{rid}", self.tr("btn_decide_now"))])]
             return self._manual_start(rid)
         if rec.state in (RecordState.VALIDATED, RecordState.DUPLICATE_SUSPECTED):
             return self._match_start(rid)
@@ -392,6 +429,12 @@ class Agent:
         if spec.kind == FieldKind.CHECKBOX:
             return _msg(self.tr("review_box", k=k, n=n, label=lab, page=page),
                         [("f:tick", self.tr("btn_ticked")), ("f:untick", self.tr("btn_unticked"))] + show)
+        if e.get("status") in (FieldStatus.NOT_APPLICABLE.value, FieldStatus.UNKNOWN.value):
+            shown = f"« {e.get('raw') or ''} » → {display(fid, e, self.lang)}"
+            return _msg(self.tr("review_field", k=k, n=n, label=lab, page=page, value=shown,
+                                conf=int(round(100 * float(e.get("confidence", 0)))), alts="", why=""),
+                        [("f:confirm", self.tr("btn_confirm_value", value=display(fid, e, self.lang))),
+                         ("f:edit", self.tr("btn_edit")), ("f:blank", self.tr("btn_blank"))] + show)
         if e.get("status") == FieldStatus.ILLEGIBLE.value or e.get("value") is None:
             return _msg(self.tr("review_illegible", k=k, n=n, label=lab, page=page),
                         [("f:edit", self.tr("btn_type_value")), ("f:blank", self.tr("btn_blank")),
@@ -432,7 +475,10 @@ class Agent:
         e = payload["fields"][fid]
         now = time.time()
         if arg == "confirm":
-            decide(payload, fid, FieldStatus.KNOWN.value, e.get("value"), "confirmed", self.midwife, now)
+            status = e.get("status")
+            keep = status if status in (FieldStatus.NOT_APPLICABLE.value, FieldStatus.UNKNOWN.value) \
+                else FieldStatus.KNOWN.value
+            decide(payload, fid, keep, e.get("value"), "confirmed", self.midwife, now)
         elif arg.startswith("alt:"):
             alts = self._alternatives(fid, e)
             k = int(arg.split(":")[1])
@@ -499,7 +545,11 @@ class Agent:
         self.state.update(mode="rest", record_id=rid)
         interesting = [f for f in rest if rec.payload["fields"][f].get("status") == FieldStatus.KNOWN.value
                        and ALL_FIELDS[f].kind == FieldKind.TEXT]
+        statuses = [rec.payload["fields"][f].get("status") for f in rest]
         lines = [self.tr("rest_intro", n=len(rest))]
+        blanks, na = statuses.count(FieldStatus.NOT_PROVIDED.value), statuses.count(FieldStatus.NOT_APPLICABLE.value)
+        if blanks or na:
+            lines.append(self.tr("rest_empty", blank=blanks, na=na))
         for fid in interesting[:12]:
             lines.append(f"• {label(fid, self.lang)} : {display(fid, rec.payload['fields'][fid], self.lang)}")
         if len(rest) > 12:
@@ -562,6 +612,8 @@ class Agent:
     # ------------------------------------------------------------------ patient matching
     def _match_start(self, rid: str) -> list[dict]:
         rec = self.store.get_record(rid)
+        if rec.state not in (RecordState.VALIDATED, RecordState.DUPLICATE_SUSPECTED) or not is_validated(rec.payload):
+            return self._review_start(rid) if rec.state == RecordState.NEEDS_REVIEW else self._menu(greet=False)
         q = quasi_identifiers(rec.payload)
         if not q.get("code"):
             self._set_mode("ask_code", record_id=rid)
@@ -588,18 +640,31 @@ class Agent:
         return self._match_start(rid)
 
     def _on_match_button(self, arg: str) -> list[dict]:
+        if arg.startswith("decide:"):
+            rid = arg.split(":", 1)[1]
+            rec = self.store.get_record(rid)
+            if rec.state != RecordState.MANUAL_REVIEW_REQUIRED or not rec.payload.get("match_undecided") \
+                    or not is_validated(rec.payload):
+                return [_msg(self.tr("stale_button"))] + self._menu(greet=False)
+            payload = rec.payload
+            payload.pop("match_undecided", None)
+            with self.store.atomic():
+                self.store.update_record(rid, payload=payload)
+                self.store.transition(rid, RecordState.VALIDATED, self.midwife, "match decision resumed")
+            return self._match_start(rid)
         rid = self.state.get("record_id")
         if rid is None:
             return self._menu(greet=False)
         rec = self.store.get_record(rid)
-        if arg == "decide":
-            if rec.state == RecordState.MANUAL_REVIEW_REQUIRED:
-                self.store.transition(rid, RecordState.VALIDATED, self.midwife, "match decision resumed")
-            return self._match_start(rid)
         if arg == "unsure":
-            self.store.transition(rid, RecordState.MANUAL_REVIEW_REQUIRED, self.midwife, "patient match undecided")
-            self._set_mode("idle", record_id=rid)
-            return [_msg(self.tr("match_unsure"), [("m:decide", self.tr("btn_decide_now"))])] + self._menu(greet=False)
+            payload = rec.payload
+            payload["match_undecided"] = True
+            with self.store.atomic():
+                self.store.update_record(rid, payload=payload)
+                self.store.transition(rid, RecordState.MANUAL_REVIEW_REQUIRED, self.midwife, "patient match undecided")
+            self._set_mode("idle")
+            return [_msg(self.tr("match_unsure"), [(f"m:decide:{rid}", self.tr("btn_decide_now"))])] + \
+                self._menu(greet=False)
         if arg == "new":
             pid = new_id()
             return self._attach(rid, pid, None)
@@ -658,14 +723,17 @@ class Agent:
 
     def _attach(self, rid: str, pid: str, profile: dict | None) -> list[dict]:
         now = time.time()
-        rec = self.store.get_record(rid)
-        profile = update_profile(profile, rid, rec.payload, now)
-        self.store.upsert_patient(pid, profile)
-        self.store.update_record(rid, patient_id=pid, bump_version=True)
-        self.store.transition(rid, RecordState.PATIENT_MATCHED, self.midwife, f"patient {pid[:8]}")
-        rec = self.store.get_record(rid)
-        self.store.transition(rid, RecordState.REGISTERED, "agent", "added to the longitudinal record",
-                              enqueue=("sync_record", rid, f"sync:{rid}:{rec.version}"))
+        # One transaction: profile update, link, both transitions and the sync job — a crash in the
+        # middle can never leave a record matched but neither registered nor queued.
+        with self.store.atomic():
+            rec = self.store.get_record(rid)
+            profile = update_profile(profile, rid, rec.payload, now)
+            self.store.upsert_patient(pid, profile)
+            self.store.update_record(rid, patient_id=pid, bump_version=True)
+            self.store.transition(rid, RecordState.PATIENT_MATCHED, self.midwife, f"patient {pid[:8]}")
+            rec = self.store.get_record(rid)
+            self.store.transition(rid, RecordState.REGISTERED, "agent", "added to the longitudinal record",
+                                  enqueue=("sync_record", rid, f"sync:{rid}:{rec.version}"))
         self._set_mode("idle")
         self.kick_sync()
         sync = self.tr("sync_now") if self.is_online() else self.tr("sync_pending")
@@ -696,10 +764,14 @@ class Agent:
         rid = self.state.get("record_id")
         if arg == "finish":
             rec = self.store.get_record(rid)
-            if rec.state == RecordState.MANUAL_REVIEW_REQUIRED and is_validated(rec.payload):
+            if rec.state != RecordState.MANUAL_REVIEW_REQUIRED or not rec.payload.get("fields"):
+                return self._manual_start(rid)
+            if is_validated(rec.payload):
                 self.store.transition(rid, RecordState.VALIDATED, self.midwife, "manual entry completed")
                 return [_msg(self.tr("validated", n=len(rec.payload.get("fields", {}))))] + self._match_start(rid)
-            return self._manual_start(rid)
+            # pages read by the AI before it failed: review those fields rather than retyping them
+            self.store.transition(rid, RecordState.NEEDS_REVIEW, self.midwife, "review the fields read by the AI")
+            return self._review_start(rid)
         if arg == "other":
             return self._manual_start(rid)
         if arg.startswith("page:"):

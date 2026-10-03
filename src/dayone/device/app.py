@@ -47,6 +47,7 @@ class Device:
         self.client = ServerClient(self.http, self.token, self.network)
         self.agent = Agent(self.store, self.registrar, self.midwife_id, is_online=lambda: self.network.online)
         self.engine = SyncEngine(self.store, self.client, notify=self.agent.notify)
+        self.agent.retry_ai = self.engine.retry_ai
         recovered = self.engine.recover()
         if recovered:
             log.info("recovered %d outbox job(s) after restart", recovered)
