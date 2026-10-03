@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DayOne — agrégats anonymisés</title>
+<style>
+  :root { --bg:#f6f7f4; --card:#fff; --ink:#1d2a24; --muted:#5d6b64; --accent:#0f7b5f; --line:#dfe5e1; --warn:#a3561a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg:#121815; --card:#1b231f; --ink:#e7efe9; --muted:#9db0a6; --accent:#3cc59a; --line:#2c3832; --warn:#e3a066; } }
+  body { margin:0; font:15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); }
+  header { padding:20px 24px 8px; } h1 { font-size:20px; margin:0 0 4px; } .sub { color:var(--muted); font-size:13px; }
+  main { display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px; padding:16px 24px 32px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { font-size:15px; margin:0 0 10px; } .kpi { font-size:28px; font-weight:650; } .kpi small { font-size:13px; color:var(--muted); font-weight:400; }
+  .bar { display:grid; grid-template-columns:70px 1fr 48px; align-items:center; gap:8px; font-size:13px; margin:3px 0; }
+  .bar .track { background:var(--line); border-radius:4px; height:12px; overflow:hidden; } .bar .fill { background:var(--accent); height:100%; }
+  .muted { color:var(--muted); } table { width:100%; border-collapse:collapse; font-size:13px; } td, th { padding:4px 6px; border-bottom:1px solid var(--line); text-align:left; }
+  .controls { padding:0 24px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; } select, input { font:inherit; padding:6px 8px; border-radius:8px; border:1px solid var(--line); background:var(--card); color:var(--ink); }
+  .err { color:var(--warn); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Suivi de grossesse — agrégats anonymisés</h1>
+  <div class="sub">Aucune donnée individuelle. Toute case concernant moins de <span id="k">5</span> femmes est masquée (« &lt;k »). Hors périmètre : aucun triage ni score de risque.</div>
+</header>
+<div class="controls">
+  <label>Jeton d'accès <select id="token"><option value="token-epi-salma">épidémiologiste</option><option value="token-sup-karim">superviseur</option><option value="token-sf-amina">sage-femme (refusé)</option></select></label>
+  <button id="reload">Actualiser</button> <span id="status" class="muted"></span>
+</div>
+<main id="main"></main>
+<script>
+const $ = (s) => document.querySelector(s);
+const fmt = (v, k) => v === null || v === undefined ? `<${k}` : v;
+function bars(hist, k) {
+  const max = Math.max(1, ...hist.map(h => h.count || 0));
+  return hist.map(h => `<div class="bar"><span>${h.bin}</span><span class="track"><span class="fill" style="display:block;width:${100*(h.count||0)/max}%"></span></span><span>${fmt(h.count,k)}</span></div>`).join("");
+}
+function tests(t, k) {
+  const rows = Object.entries(t).map(([name, c]) => `<tr><td>${{hiv:"VIH",syphilis:"Syphilis",hbsag:"Ag HBs (hépatite B)",hepatitis_c:"Hépatite C"}[name]||name}</td><td>${fmt(c.tested,k)}</td><td>${fmt(c.negative,k)}</td><td>${fmt(c.positive,k)}</td><td>${fmt(c.not_done,k)}</td></tr>`).join("");
+  return `<table><tr><th>Test</th><th>Total</th><th>Négatif</th><th>Positif</th><th>Non fait</th></tr>${rows}</table>`;
+}
+function section(title, d, k) {
+  if (!d || !d.systolic) return `<div class="card"><h2>${title}</h2><p class="muted">Pas encore de données.</p></div>`;
+  return `<div class="card"><h2>${title}</h2><div class="kpi">${fmt(d.women,k)} <small>femmes · ${d.n_bp} mesures de TA</small></div>
+  <p class="muted">TA moyenne : ${fmt(d.mean_systolic,k)} / ${fmt(d.mean_diastolic,k)} mmHg</p>
+  <h2>Systolique (mmHg)</h2>${bars(d.systolic,k)}<h2 style="margin-top:12px">Diastolique (mmHg)</h2>${bars(d.diastolic,k)}
+  ${d.temperature ? `<h2 style="margin-top:12px">Température post-partum (°C)</h2>${bars(d.temperature,k)}` : ""}
+  <h2 style="margin-top:12px">Tests infectieux</h2>${tests(d.tests,k)}</div>`;
+}
+async function load() {
+  $("#status").textContent = "chargement…";
+  const r = await fetch("/v1/dashboard", {headers: {Authorization: "Bearer " + $("#token").value}});
+  if (!r.ok) { $("#main").innerHTML = `<div class="card err">Accès refusé (${r.status}) : ce rôle ne voit pas les agrégats.</div>`; $("#status").textContent = ""; return; }
+  const d = await r.json(); const k = d.k_anonymity; $("#k").textContent = k;
+  $("#main").innerHTML = section("Fiches enregistrées via l'agent", d.registered, k) + section("Référence (CSV synthétique, 200 grossesses)", d.reference_csv, k);
+  $("#status").textContent = "à jour";
+}
+$("#reload").onclick = load; $("#token").onchange = load; load();
+</script>
+</body>
+</html>
