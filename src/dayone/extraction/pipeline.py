@@ -23,7 +23,7 @@ import numpy as np
 from dayone.extraction.confidence import ConfidenceModel, checkbox_confidence
 from dayone.extraction.fields import checkbox_fill, crop_for_ocr, field_ink, ink_map
 from dayone.extraction.normalize import VOCABULARIES, canonical, parse_value
-from dayone.extraction.ocr import PRIMARY_MODEL, OcrEngine, Reading
+from dayone.extraction.ocr import PRIMARY_MODEL, OcrEngine, OcrUnavailable, Reading
 from dayone.extraction.quality import QualityReport, assess_capture
 from dayone.extraction.register import Registrar
 from dayone.extraction.validators import apply_rules
@@ -113,10 +113,11 @@ class Extractor:
         if second is not None:
             self.second = second
         elif self.cfg.second_model:
-            self.second = OcrEngine(self.cfg.second_model)
+            self.second = OcrEngine(self.cfg.second_model, timeout=60.0)
         else:
             self.second = None
         self.confidence = confidence or ConfidenceModel.load()
+        self._second_down_until = 0.0
         if self.confidence.accept_threshold is not None:
             self.cfg.accept_threshold = self.confidence.accept_threshold
 
@@ -154,7 +155,9 @@ class Extractor:
         with cf.ThreadPoolExecutor(self.cfg.workers) as ex:
             specs = [spec for spec, _ in jobs]
             primaries = list(ex.map(lambda a: self.primary.read(a[1], ocr_prompt(a[0])), zip(specs, crops, strict=True)))
-            seconds = list(ex.map(self.second.read, crops)) if self.second else [None] * len(jobs)
+        # The second reader only adds evidence: if it is unavailable the fields are marked
+        # "second_missing" (lower confidence) instead of failing the page. Calls are sequential.
+        seconds = [self._second_read(c) for c in crops]
         for (spec, fi), prim, sec in zip(jobs, primaries, seconds, strict=True):
             fields[spec.id] = self._text(spec, fi, prim, sec, reg.similarity, quality)
         apply_rules(page_type, fields)
@@ -164,6 +167,17 @@ class Extractor:
             warnings.append("low_quality_capture:" + ",".join(quality.issues))
         return PageExtraction(page_type=page_type, page_type_confidence=reg.confidence, layout="template",
                               fields=fields, warnings=warnings, elapsed_s=time.time() - t0, **base)
+
+    def _second_read(self, crop) -> Reading | None:
+        if self.second is None or time.time() < self._second_down_until:
+            return None
+        try:
+            return self.second.read(crop)
+        except OcrUnavailable as e:
+            # circuit breaker: do not wait for a dead reader on every remaining field
+            self._second_down_until = time.time() + 120.0
+            log.warning("second reader unavailable for 2 min, continuing without it: %s", e)
+            return None
 
     # ------------------------------------------------------------------
     def _checkbox(self, ink, spec: FieldSpec) -> FieldResult:
