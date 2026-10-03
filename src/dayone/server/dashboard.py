@@ -10,6 +10,7 @@ the records registered through the agent, and the organisers' synthetic referenc
 from __future__ import annotations
 
 import csv
+import re
 from collections import Counter
 from pathlib import Path
 
@@ -51,10 +52,10 @@ def _from_records(records: list[dict], k: int) -> dict:
                 continue
             v = e.get("value")
             name = fid.rsplit(".", 1)[-1]
-            if name == "bp" and isinstance(v, str) and "/" in v:
-                s, d = v.split("/")
-                sys_.append(float(s))
-                dia.append(float(d))
+            m = re.fullmatch(r"(\d{2,3})/(\d{2,3})", v) if name == "bp" and isinstance(v, str) else None
+            if m:
+                sys_.append(float(m.group(1)))
+                dia.append(float(m.group(2)))
             elif name == "temperature" and isinstance(v, int | float) and "newborn" not in fid:
                 temp.append(float(v))
             elif name in tests and isinstance(v, str):
