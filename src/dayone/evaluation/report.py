@@ -280,7 +280,7 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("command", choices=["calibrate", "report"])
     ap.add_argument("--eval-dir", type=Path, default=Path("artifacts/eval"))
-    ap.add_argument("--run", default="main")
+    ap.add_argument("--run", default="final")
     ap.add_argument("--model", type=Path, default=DEFAULT_MODEL_PATH)
     ap.add_argument("--out", type=Path, default=Path("docs/RESULTS.md"))
     args = ap.parse_args()

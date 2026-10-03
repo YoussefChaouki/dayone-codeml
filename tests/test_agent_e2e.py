@@ -50,6 +50,9 @@ class Phone:
                 return
 
     def buttons(self, msgs):
+        return [b["id"].partition("#")[0] for m in msgs for b in m["buttons"]]
+
+    def raw_buttons(self, msgs):
         return [b["id"] for m in msgs for b in m["buttons"]]
 
     def text(self, msgs):
@@ -227,3 +230,26 @@ def test_stale_buttons_are_refused(phone):
     phone.tap("menu:manual")
     phone.tap("rest:confirm")
     assert all(r.state != S.REGISTERED for r in phone.store.list_records())
+
+
+def test_old_button_cannot_confirm_another_field(phone):
+    rid = capture_offline(phone)
+    phone.net.online = True
+    phone.sync()
+    msgs = phone.tap(f"rev:start:{rid}")
+    confirm_bp = next(b for b in phone.raw_buttons(msgs) if b.startswith("f:confirm"))
+    phone.tap(confirm_bp)  # first tap: confirms the blood pressure shown
+    msgs = phone.tap(confirm_bp)  # second tap on the same old button: must not touch the next field
+    assert "plus valable" in phone.text(msgs)
+    rec = phone.store.get_record(rid)
+    assert rec.payload["fields"]["pregnancy.visit.t1v2.hemoglobin"]["source"] == "ocr"
+
+
+def test_old_review_button_on_registered_record_is_refused(phone):
+    test_full_flow_offline_capture_review_match_sync(phone)
+    rid = phone.store.list_records()[-1].id
+    msgs = phone.tap(f"rev:start:{rid}")
+    assert "plus valable" in phone.text(msgs)
+    assert phone.store.get_record(rid).state == S.SYNCED
+    msgs = phone.tap(f"manual:record:{rid}")
+    assert "plus valable" in phone.text(msgs)

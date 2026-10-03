@@ -1,5 +1,7 @@
 # DayOne — paper maternal registry -> verified digital record (100 % local)
 PY := uv run python
+# evaluation run (see docs/EVALUATION.md §7)
+RUN ?= final
 .PHONY: install models fonts prepare dataset eval calibrate report test lint demo demo-offline clean-demo
 
 install:            ## Python environment (uv)
@@ -23,13 +25,13 @@ dataset: prepare fonts  ## simulated captures (seeded) + multilingual pages
 	$(PY) -m dayone.evaluation.dataset
 
 eval:               ## run the pipeline on every capture (resumable; ~3 h on an M4 Pro)
-	$(PY) -m dayone.evaluation.run --run main
+	$(PY) -m dayone.evaluation.run --run $(RUN)
 
 calibrate:          ## fit the confidence model and the acceptance threshold (calibration split)
-	$(PY) -m dayone.evaluation.report calibrate
+	$(PY) -m dayone.evaluation.report calibrate --run $(RUN)
 
 report:             ## metrics on the test split -> docs/RESULTS.md
-	$(PY) -m dayone.evaluation.report report
+	$(PY) -m dayone.evaluation.report report --run $(RUN)
 
 test:               ## unit, offline-robustness and end-to-end tests (no AI needed)
 	uv run pytest -q

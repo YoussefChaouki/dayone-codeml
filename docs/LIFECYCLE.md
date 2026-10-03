@@ -40,7 +40,7 @@ stateDiagram-v2
 | PATIENT_MATCHED (PATIENTE_LIÉE) | linked to a profile | no | registration |
 | REGISTERED (ENREGISTRÉ) | in the longitudinal profile, sync job queued | yes | pushed when online |
 | SYNCED (SYNCHRONISÉ) | acknowledged by the server | — | final (corrections after sync are out of scope) |
-| PROCESSING_FAILED (ÉCHEC_TRAITEMENT) | a page could not be read: server errors (4 attempts), model server down (10 attempts, back-off 2 s → 10 min, ≈ 30 min) or page not recognised | — | immediately handed over: MANUAL_REVIEW_REQUIRED |
+| PROCESSING_FAILED (ÉCHEC_TRAITEMENT) | a page could not be read: server errors (4 attempts), model server down (10 attempts, back-off 2 s → 512 s, ≈ 17 min) or page not recognised | — | immediately handed over: MANUAL_REVIEW_REQUIRED |
 | SYNC_FAILED (ÉCHEC_SYNCHRONISATION) | server refused / failed | yes | retried with back-off until acknowledged |
 | DUPLICATE_SUSPECTED (DOUBLON_SUSPECTÉ) | re-digitised pages differ from the profile | no | midwife picks old/new per field |
 | MANUAL_REVIEW_REQUIRED (RÉVISION_MANUELLE_REQUISE) | AI cannot help, match undecided, or capture cancelled | no | manual entry, "retry the reading", review of fields already read, or "decide now" |

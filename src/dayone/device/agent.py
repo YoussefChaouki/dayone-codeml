@@ -53,6 +53,8 @@ from dayone.schema import PAGE_TITLES_EN, PAGE_TITLES_FR, FieldKind, FieldStatus
 
 log = logging.getLogger(__name__)
 
+REVIEWABLE = {RecordState.AI_PROCESSED, RecordState.NEEDS_REVIEW, RecordState.VALIDATED,
+              RecordState.DUPLICATE_SUSPECTED, RecordState.MANUAL_REVIEW_REQUIRED}
 MAX_SIDE = 2000  # stored photos are downscaled to this long side (enough for OCR, saves space)
 SPECIAL_WORDS = {
     "vide": FieldStatus.NOT_PROVIDED, "blank": FieldStatus.NOT_PROVIDED, "passer": FieldStatus.NOT_PROVIDED,
@@ -106,13 +108,25 @@ class Agent:
             m["id"] = self.store.log_chat(m)
         return messages
 
+    # Buttons bound to the record (and field) on screen when they were offered: an old button
+    # (WhatsApp keeps them all tappable) can never act on another record or another field.
+    TAGGED = ("f:", "rest:", "m:pick:", "m:new", "m:unsure", "d:", "cap:", "q:")
+
+    def _tag(self, messages: list[dict]) -> list[dict]:
+        rid, fid = self.state.get("record_id"), self.state.get("current")
+        for m in messages:
+            for b in m.get("buttons", []):
+                if rid and b["id"].startswith(self.TAGGED) and "#" not in b["id"]:
+                    b["id"] += f"#{rid}" + (f"|{fid}" if b["id"].startswith("f:") and fid else "")
+        return messages
+
     def handle(self, event: dict) -> list[dict]:
         with self.lock:
             user_msg = {"role": "user", "text": event.get("text") or event.get("title") or "",
                         "image": event.get("image_ref"), "buttons": []}
             self._log([user_msg])
             try:
-                out = self._dispatch(event)
+                out = self._tag(self._dispatch(event))
             finally:
                 self._save()
             return [user_msg] + self._log(out)
@@ -195,6 +209,11 @@ class Agent:
     MANUAL_ANSWERS = {"yes", "no", "skip", "end"}
 
     def _stale(self, bid: str) -> bool:
+        bid, _, tag = bid.partition("#")
+        if tag:
+            rid, _, fid = tag.partition("|")
+            if rid != self.state.get("record_id") or (fid and fid != self.state.get("current")):
+                return True
         head, _, arg = bid.partition(":")
         mode = self.state.get("mode", "idle")
         if head in self.BUTTON_MODES:
@@ -209,6 +228,7 @@ class Agent:
     def _on_button(self, bid: str) -> list[dict]:
         if self._stale(bid):
             return [_msg(self.tr("stale_button"))] + self._menu(greet=False)
+        bid = bid.partition("#")[0]
         head, _, arg = bid.partition(":")
         if bid == "menu:new":
             self._start_capture()
@@ -400,6 +420,8 @@ class Agent:
         if rid is None:
             return self._review_next_record()
         rec = self.store.get_record(rid)
+        if rec.state not in REVIEWABLE or rec.payload.get("cancelled"):
+            return [_msg(self.tr("stale_button"))] + self._menu(greet=False)
         if rec.state == RecordState.AI_PROCESSED:
             self.store.transition(rid, RecordState.NEEDS_REVIEW, "agent", "presented to the midwife")
             rec = self.store.get_record(rid)
@@ -747,6 +769,9 @@ class Agent:
 
     # ------------------------------------------------------------------ manual entry
     def _manual_start(self, rid: str | None) -> list[dict]:
+        if rid is not None and self.store.get_record(rid).state not in (RecordState.CAPTURED,
+                                                                          RecordState.MANUAL_REVIEW_REQUIRED):
+            return [_msg(self.tr("stale_button"))] + self._menu(greet=False)  # e.g. an old "type it in" button
         if rid is None:
             rid = self.store.create_record(self.midwife, {"lang": self.lang, "manual": True})
             self.store.transition(rid, RecordState.MANUAL_REVIEW_REQUIRED, self.midwife, "manual entry")

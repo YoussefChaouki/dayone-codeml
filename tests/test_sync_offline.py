@@ -200,3 +200,29 @@ def test_random_network_chaos_never_loses_or_duplicates(tmp_path_factory, script
     assert len(page_ids) == len(set(page_ids)) and set(page_ids) <= set(all_pages)  # no duplicate upload
     synced = [r for r, _ in records if store.get_record(r).state == S.SYNCED]
     assert sorted(r[0] for r in reg.execute("SELECT id FROM records")) == sorted(synced)  # each record once
+
+
+def test_retry_after_upload_server_errors(tmp_path, server):
+    net = Network(online=True)
+    store, engine, events = make_device(tmp_path / "d.db", server, net)
+    rid, pids = capture(store, 1)
+    for _ in range(6):  # every upload attempt hits a server error
+        net.faults.append("server_error")
+        engine.run_once()
+        store.db.execute("UPDATE outbox SET next_attempt_at=0")
+    assert store.get_record(rid).state == S.MANUAL_REVIEW_REQUIRED
+    net.faults.clear()
+    assert engine.retry_ai(rid, "sf-amina") == 1
+    drain(engine, server, pids)
+    assert store.get_record(rid).state == S.AI_PROCESSED
+    assert server.app.state.registry.execute("SELECT COUNT(*) FROM pages")[0][0] == 1
+
+
+def test_sibling_page_is_accepted_as_the_expected_page(registrar):
+    from conftest import page_png
+    from dayone.schema import PageType
+
+    reg = registrar.register(page_png(7), expected=PageType.PP_EARLY_MOTHER)  # late page, same layout and zones
+    assert reg.ok and reg.page_type == PageType.PP_EARLY_MOTHER
+    reg = registrar.register(page_png(3), expected=PageType.PP_EARLY_MOTHER)  # a different layout is refused
+    assert not reg.ok and reg.reason.startswith("unexpected_page")

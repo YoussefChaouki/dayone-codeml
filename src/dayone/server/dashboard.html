@@ -42,7 +42,7 @@ function tests(t, k) {
 }
 function section(title, d, k) {
   if (!d || !d.systolic) return `<div class="card"><h2>${title}</h2><p class="muted">Pas encore de données.</p></div>`;
-  return `<div class="card"><h2>${title}</h2><div class="kpi">${fmt(d.women,k)} <small>femmes · ${d.n_bp} mesures de TA</small></div>
+  return `<div class="card"><h2>${title}</h2><div class="kpi">${fmt(d.women,k)} <small>femmes · ${fmt(d.n_bp,k)} avec une TA</small></div>
   <p class="muted">TA moyenne : ${fmt(d.mean_systolic,k)} / ${fmt(d.mean_diastolic,k)} mmHg</p>
   <h2>Systolique (mmHg)</h2>${bars(d.systolic,k)}<h2 style="margin-top:12px">Diastolique (mmHg)</h2>${bars(d.diastolic,k)}
   ${d.temperature ? `<h2 style="margin-top:12px">Température post-partum (°C)</h2>${bars(d.temperature,k)}` : ""}

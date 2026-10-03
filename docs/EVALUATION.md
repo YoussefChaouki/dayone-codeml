@@ -39,7 +39,7 @@ and does its confidence tell the midwife *which* fields to check?
   a consistency rule); dashes predicted NOT_APPLICABLE.
 * **Tick boxes** — accuracy of ticked / not ticked.
 * **Uncertainty**:
-  * *auto-acceptance coverage*: share of handwritten fields accepted without review (KNOWN);
+  * *auto-acceptance coverage*: share of handwritten fields the agent does not ask about;
   * *silent error rate*: among handwritten fields the agent did **not** ask about (accepted as
     a value, or as blank / not applicable / unknown), the share that is wrong — the agent was
     wrong **and** did not say so; also reported over every field (blanks, dashes, tick boxes);
@@ -60,7 +60,7 @@ and does its confidence tell the midwife *which* fields to check?
    the target, τ = 0.99 and the report says the target was not reached.
 3. The test split is used once for the final report; no parameter is changed afterwards.
    If a bug is found after the report, it is fixed, the whole calibration → test
-   sequence is re-run and the change is logged in section 6.
+   sequence is re-run and the change is logged in section 7.
 4. `severe` captures are expected to be rejected by the quality gate; their accuracy is
    reported for transparency but is not a target.
 
@@ -86,6 +86,10 @@ make report       # metrics on the test split -> docs/RESULTS.md
 * **One layout.** All test pages share the specimen layout; nothing here measures
   generalisation to another booklet.
 * **Synthetic Arabic/English.** Fonts, not real handwriting.
+* **Misclassified pages.** A page classified as another page type contributes all its fields
+  as errors to accuracy but none to the silent-error rate (in the app its values would be
+  filed under the wrong fields without a question). Page classification accuracy is reported
+  separately so this case stays visible.
 
 ## 7. Change log
 
@@ -113,3 +117,8 @@ All entries below were written **before** any metric of the final run was comput
   classification / registration statistics were computed on all 80 pages (see §6);
   (3) after adding the repairs, ground truth was re-generated for all pages to check that it
   did not change (it did not) — no prediction or metric was computed on the test split.
+* 2026-10-03 — after run `final` started (commit in `_meta.json`), two extraction files
+  changed for the phone/server only, with no effect on what the evaluation measures:
+  `register.py` accepts the sibling page when a page type is *expected* (the evaluation never
+  passes one), and `Extractor(ocr_cache=False)` lets the server avoid the on-disk OCR cache
+  (the evaluation keeps the default, cache on).

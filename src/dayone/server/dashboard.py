@@ -35,11 +35,14 @@ def _hist(values: list[float], bins: list[float], k: int) -> list[dict]:
 
 
 def _tests(counter: Counter, k: int) -> dict:
-    total = sum(counter.values())
-    out = {"tested": total if total >= k or total == 0 else None}
+    out = {}
     for key in ("negative", "positive", "not_done"):
         c = counter.get(key, 0)
         out[key] = c if c >= k or c == 0 else None
+    total = sum(counter.values())
+    # complementary suppression: a published total would reveal a hidden cell by subtraction
+    hidden = any(v is None for v in out.values())
+    out["tested"] = None if hidden or 0 < total < k else total
     return out
 
 
@@ -76,8 +79,10 @@ def _from_records(records: list[tuple[str, dict]], k: int) -> dict:
                 c["positive" if "positive" in w[name] else "negative" if "negative" in w[name] else "not_done"] += 1
         tests[name] = _tests(c, k)
     women = len(per_woman)
+    systolic, diastolic = _hist(sys_, SYS_BINS, k), _hist(dia, DIA_BINS, k)
+    hidden = any(b["count"] is None for b in systolic + diastolic)
     return {"women": women if women >= k or women == 0 else None,
-            "n_bp": len(sys_), "systolic": _hist(sys_, SYS_BINS, k), "diastolic": _hist(dia, DIA_BINS, k),
+            "n_bp": None if hidden else len(sys_), "systolic": systolic, "diastolic": diastolic,
             "mean_systolic": round(float(np.mean(sys_)), 1) if len(sys_) >= k else None,
             "mean_diastolic": round(float(np.mean(dia)), 1) if len(dia) >= k else None,
             "n_temperature": len(temp), "temperature": _hist(temp, TEMP_BINS, k), "tests": tests}

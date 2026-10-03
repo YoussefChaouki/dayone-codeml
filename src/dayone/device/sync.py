@@ -26,7 +26,7 @@ from dayone.records import merge_extraction
 log = logging.getLogger(__name__)
 
 MAX_PROCESSING_ATTEMPTS = 4  # server errors
-MAX_AI_UNAVAILABLE_ATTEMPTS = 10  # model server down: back-off 2, 4, ... 600 s, i.e. ~30 min before giving up
+MAX_AI_UNAVAILABLE_ATTEMPTS = 10  # model server down: 9 retries, back-off 2, 4, ... 512 s, i.e. ~17 min
 POLL_DELAY_S = 1.5
 
 
@@ -195,8 +195,9 @@ class SyncEngine:
             return 0
         with self.store.atomic():
             for p in failed:
-                self.store.set_page_status(p.id, "uploaded")
-                self.store.enqueue("process_page", p.id, f"process:{p.id}:{int(time.time())}")
+                # "stored": re-sent (idempotent if the server already has it), then re-queued server-side
+                self.store.set_page_status(p.id, "stored")
+                self.store.enqueue("process_page", p.id, f"retry:{p.id}:{int(time.time())}")
             self.store.transition(rid, RecordState.PENDING_AI, actor, "AI reading retried")
         return len(failed)
 
@@ -216,6 +217,11 @@ class SyncEngine:
             return 0
         if status["status"] == "failed":
             error = status.get("error") or "failed"
+            if job.idempotency_key.startswith("retry:") and job.attempts == 0:
+                # the midwife asked to retry: ask the server to process the page again, whatever the error
+                self.store.job_retry(job.id, error, POLL_DELAY_S)
+                self.client.retry_page(page.id)
+                return 0
             if error.startswith("ai_unavailable") and job.attempts + 1 < MAX_AI_UNAVAILABLE_ATTEMPTS:
                 self.store.job_retry(job.id, error, self._backoff(job.attempts + 1))
                 self.client.retry_page(page.id)

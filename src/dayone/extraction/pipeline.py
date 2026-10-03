@@ -23,7 +23,7 @@ import numpy as np
 from dayone.extraction.confidence import ConfidenceModel, checkbox_confidence
 from dayone.extraction.fields import checkbox_fill, crop_for_ocr, field_ink, ink_map
 from dayone.extraction.normalize import VOCABULARIES, canonical, parse_value
-from dayone.extraction.ocr import PRIMARY_MODEL, OcrEngine, OcrUnavailable, Reading
+from dayone.extraction.ocr import CACHE_DIR, PRIMARY_MODEL, OcrEngine, OcrUnavailable, Reading
 from dayone.extraction.quality import QualityReport, assess_capture
 from dayone.extraction.register import Registrar
 from dayone.extraction.validators import apply_rules
@@ -114,15 +114,17 @@ def text_features(spec: FieldSpec, primary: Reading, second: Reading | None, ink
 class Extractor:
     def __init__(self, config: PipelineConfig | None = None, registrar: Registrar | None = None,
                  primary: OcrEngine | None = None, second: OcrEngine | None = None,
-                 confidence: ConfidenceModel | None = None) -> None:
+                 confidence: ConfidenceModel | None = None, ocr_cache: bool = True) -> None:
+        """``ocr_cache=False`` in production: the cache holds raw readings in clear (evaluation only)."""
         self.cfg = config or PipelineConfig()
         self.registrar = registrar or Registrar()
-        self.primary = primary or OcrEngine(self.cfg.primary_model or PRIMARY_MODEL)
+        cache = CACHE_DIR if ocr_cache else None
+        self.primary = primary or OcrEngine(self.cfg.primary_model or PRIMARY_MODEL, cache_dir=cache)
         # The second reader is decided by the configuration (second_model=None disables it).
         if second is not None:
             self.second = second
         elif self.cfg.second_model:
-            self.second = OcrEngine(self.cfg.second_model, timeout=60.0)
+            self.second = OcrEngine(self.cfg.second_model, timeout=60.0, cache_dir=cache)
         else:
             self.second = None
         self.confidence = confidence or ConfidenceModel.load()

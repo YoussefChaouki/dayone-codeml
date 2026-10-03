@@ -27,7 +27,7 @@ def main() -> None:
     logging.getLogger("httpx").setLevel(logging.WARNING)
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--eval-dir", type=Path, default=Path("artifacts/eval"))
-    ap.add_argument("--run", default="main")
+    ap.add_argument("--run", default="final")
     ap.add_argument("--split", choices=["calib", "test", "all"], default="all")
     ap.add_argument("--levels", default="clean,mild,medium,severe")
     ap.add_argument("--kinds", default="specimen,synth")

@@ -159,12 +159,8 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None) ->
             raise HTTPException(401, "bad signature")
         for sender, event in parse_webhook(await request.json()):
             mid = event.pop("message_id", None)
-            if mid is not None:
-                if mid in seen:  # Meta re-delivers webhooks: handle each message once
-                    continue
-                seen[mid] = None
-                while len(seen) > 5000:
-                    seen.pop(next(iter(seen)))
+            if mid is not None and mid in seen:  # Meta re-delivers webhooks: handle each message once
+                continue
             midwife = cfg.allowed_senders.get(sender)
             if midwife is None:  # unknown number: never processed, never stored
                 log.warning("message from an unregistered number ignored")
@@ -176,6 +172,10 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None) ->
                     msg = msg | {"text": msg["text"] + "\n(image visible dans l'application)"}
                 for payload in to_cloud_payloads(sender, msg):
                     client.send(payload)
+            if mid is not None:  # only once handled: a failure lets Meta's re-delivery try again
+                seen[mid] = None
+                while len(seen) > 5000:
+                    seen.pop(next(iter(seen)))
         return {"ok": True}
 
     return r

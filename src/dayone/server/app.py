@@ -129,7 +129,7 @@ class Processor:
 def default_extractor_factory():
     from dayone.extraction.pipeline import Extractor
 
-    return Extractor()
+    return Extractor(ocr_cache=False)  # no plaintext readings on the server's disk
 
 
 def create_app(directory: Path = SERVER_DIR, extractor_factory=default_extractor_factory,
@@ -189,6 +189,8 @@ def create_app(directory: Path = SERVER_DIR, extractor_factory=default_extractor
         if rows[0][1] == "failed":
             registry.execute("UPDATE pages SET status='queued', error=NULL WHERE id=?", (page_id,))
             processor.submit(page_id)
+        if rows[0][1] in ("done", "processing", "queued"):
+            return {"page_id": page_id, "status": rows[0][1]}
         return {"page_id": page_id, "status": "queued"}
 
     @app.get("/v1/pages/{page_id}")

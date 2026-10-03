@@ -247,6 +247,9 @@ class Registrar:
         if best in SIBLINGS:
             page_type = self._disambiguate(warped, best, SIBLINGS[best])
         confidence = float(np.clip(margin / 0.2, 0.0, 1.0))
+        if expected is not None and page_type == SIBLINGS.get(expected):
+            # same layout and same identifier zones; the title band that tells them apart may be masked
+            page_type = expected
         if expected is not None and page_type != expected:
             return Registration(False, page_type, confidence, sims[best], method, scores,
                                 reason=f"unexpected_page:{page_type.value}")
