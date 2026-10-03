@@ -17,6 +17,8 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from dayone.channels.whatsapp import WhatsAppConfig
+from dayone.channels.whatsapp import router as whatsapp_router
 from dayone.device.agent import Agent, field_crop
 from dayone.device.lifecycle import STATE_LABEL_FR
 from dayone.device.store import DeviceStore
@@ -162,6 +164,11 @@ def create_app(device: Device) -> FastAPI:
     def sample(name: str) -> FileResponse:
         return FileResponse(_sample_path(name))
 
+    # Real WhatsApp (Cloud API): only when explicitly configured (sends messages through Meta).
+    whatsapp = WhatsAppConfig.from_env()
+    if whatsapp is not None:
+        app.include_router(whatsapp_router(whatsapp, lambda midwife_id: device.agent))
+        log.warning("WhatsApp Cloud API channel ENABLED: messages leave the machine (synthetic data only)")
     return app
 
 
