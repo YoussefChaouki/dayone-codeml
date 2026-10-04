@@ -17,7 +17,7 @@ from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from dayone.channels.whatsapp import WhatsAppConfig
+from dayone.channels.whatsapp import CloudClient, WhatsAppConfig, deliver
 from dayone.channels.whatsapp import router as whatsapp_router
 from dayone.device.agent import Agent, field_crop
 from dayone.device.lifecycle import STATE_LABEL_FR
@@ -46,7 +46,7 @@ class Device:
         self.store = DeviceStore(self.data_dir / "device.db", self.pin)
         self.client = ServerClient(self.http, self.token, self.network)
         self.agent = Agent(self.store, self.registrar, self.midwife_id, is_online=lambda: self.network.online)
-        self.engine = SyncEngine(self.store, self.client, notify=self.agent.notify)
+        self.engine = SyncEngine(self.store, self.client, notify=self._notify)
         self.agent.retry_ai = self.engine.retry_ai
         recovered = self.engine.recover()
         if recovered:
@@ -54,6 +54,26 @@ class Device:
         self.loop = SyncLoop(self.engine, self.network) if self.background else None
         if self.loop:
             self.loop.start()
+
+    push = None  # set when a real channel (WhatsApp) must also receive background notifications
+
+    def _notify(self, kind: str, data: dict) -> list[dict]:
+        messages = self.agent.notify(kind, data)
+        if self.push and messages:
+            try:
+                self.push(messages)
+            except httpx.HTTPError:  # channel down: the messages stay in the chat log, nothing is lost
+                log.exception("could not push a notification to the external channel")
+        return messages
+
+    def image_bytes(self, url: str) -> bytes | None:
+        """Resolve an agent image URL (/api/crops/<page>/<field>, /api/pages/<page>/image) to JPEG bytes."""
+        parts = url.strip("/").split("/")
+        if parts[:2] == ["api", "crops"] and len(parts) == 4:
+            return field_crop(self.store, parts[2], parts[3])
+        if parts[:2] == ["api", "pages"] and len(parts) == 4:
+            return self.store.page_image(parts[2])
+        return None
 
     def restart(self) -> None:
         """Simulate the app being killed and reopened: everything is rebuilt from the encrypted store."""
@@ -168,7 +188,12 @@ def create_app(device: Device) -> FastAPI:
     # Real WhatsApp (Cloud API): only when explicitly configured (sends messages through Meta).
     whatsapp = WhatsAppConfig.from_env()
     if whatsapp is not None:
-        app.include_router(whatsapp_router(whatsapp, lambda midwife_id: device.agent))
+        cloud = CloudClient(whatsapp)
+        app.include_router(whatsapp_router(whatsapp, lambda midwife_id: device.agent, client=cloud,
+                                           image_bytes=device.image_bytes))
+        numbers = [n for n, m in whatsapp.allowed_senders.items() if m == device.midwife_id]
+        if numbers:  # background notifications ("record read", "synced") go to the midwife's WhatsApp too
+            device.push = lambda msgs: deliver(whatsapp, cloud, numbers[0], msgs, device.image_bytes)
         log.warning("WhatsApp Cloud API channel ENABLED: messages leave the machine (synthetic data only)")
     return app
 

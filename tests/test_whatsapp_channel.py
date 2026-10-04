@@ -124,3 +124,34 @@ def test_redelivered_webhook_is_handled_once():
     c.post("/whatsapp/webhook", content=body, headers=headers)
     c.post("/whatsapp/webhook", content=body, headers=headers)  # Meta retries the same delivery
     assert len(cloud.sent) == 1
+
+
+class FakeCloudWithMedia(FakeCloud):
+    def upload_image(self, data):
+        self.sent.append({"uploaded": len(data)})
+        return "MEDIA42"
+
+
+def test_images_are_sent_only_when_allowed():
+    from dayone.channels.whatsapp import deliver
+
+    msg = [{"role": "agent", "text": "Zone lue", "image": "/api/crops/p/f", "buttons": []}]
+    cloud = FakeCloudWithMedia()
+    deliver(WhatsAppConfig("t", "pid", "v", "s", send_images=False), cloud, "2126", msg, lambda url: b"jpeg")
+    assert len(cloud.sent) == 1 and cloud.sent[0]["type"] == "text" and "application" in cloud.sent[0]["text"]["body"]
+    cloud = FakeCloudWithMedia()
+    deliver(WhatsAppConfig("t", "pid", "v", "s", send_images=True), cloud, "2126", msg, lambda url: b"jpeg")
+    assert cloud.sent[0] == {"uploaded": 4} and cloud.sent[1]["image"]["id"] == "MEDIA42"
+
+
+def test_background_notifications_are_pushed(tmp_path, server, registrar):
+    from dayone.device.app import Device
+    from dayone.device.sync import Network
+
+    device = Device(tmp_path / "phone", "2468", "sf-amina", "token-sf-amina", "http://unused", Network(online=True),
+                    http=server, registrar=registrar, background=False)
+    pushed = []
+    device.push = pushed.extend
+    rid = device.store.create_record("sf-amina", {"fields": {}})
+    device._notify("synced", {"record_id": rid})
+    assert pushed and "synchronisée" in pushed[0]["text"]

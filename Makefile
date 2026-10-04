@@ -2,7 +2,7 @@
 PY := uv run python
 # evaluation run (see docs/EVALUATION.md §7)
 RUN ?= final
-.PHONY: install models fonts prepare dataset eval calibrate unseen report test lint demo demo-offline clean-demo
+.PHONY: install models fonts prepare dataset eval calibrate unseen report demo-whatsapp tunnel test lint demo demo-offline clean-demo
 
 install:            ## Python environment (uv)
 	uv sync
@@ -50,6 +50,13 @@ demo:               ## phone http://127.0.0.1:8000 + server http://127.0.0.1:810
 
 demo-offline:       ## same, the phone starts without network
 	$(PY) -m dayone.demo --offline
+
+demo-whatsapp:      ## same demo + real WhatsApp (needs whatsapp.env and a public HTTPS tunnel, see docs/WHATSAPP.md)
+	@test -f whatsapp.env || (echo "copy whatsapp.env.example to whatsapp.env and fill it in" && exit 1)
+	set -a; . ./whatsapp.env; set +a; $(PY) -m dayone.demo
+
+tunnel:             ## public HTTPS URL for the WhatsApp webhook (cloudflared quick tunnel, no account)
+	cloudflared tunnel --url http://127.0.0.1:8000
 
 clean-demo:
 	rm -rf artifacts/demo

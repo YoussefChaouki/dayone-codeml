@@ -15,3 +15,6 @@ __pycache__/
 *.db-wal
 *.db-shm
 .DS_Store
+
+# real WhatsApp credentials
+whatsapp.env

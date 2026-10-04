@@ -131,6 +131,14 @@ class CloudClient:
         r = self.http.post(f"{GRAPH}/{self.cfg.phone_number_id}/messages", json=payload, headers=self.headers)
         r.raise_for_status()
 
+    def upload_image(self, data: bytes) -> str:
+        """Upload a JPEG to Meta's media store, return its media id."""
+        r = self.http.post(f"{GRAPH}/{self.cfg.phone_number_id}/media", headers=self.headers,
+                           data={"messaging_product": "whatsapp", "type": "image/jpeg"},
+                           files={"file": ("image.jpg", data, "image/jpeg")})
+        r.raise_for_status()
+        return r.json()["id"]
+
     def download(self, media_id: str) -> bytes:
         meta = self.http.get(f"{GRAPH}/{media_id}", params={"phone_number_id": self.cfg.phone_number_id}, headers=self.headers)
         meta.raise_for_status()
@@ -139,8 +147,28 @@ class CloudClient:
         return data.content
 
 
-def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None) -> APIRouter:
-    """``agent_for(midwife_id)`` returns the Agent of that midwife."""
+def deliver(cfg: WhatsAppConfig, client: CloudClient, to: str, messages: list[dict], image_bytes=None) -> None:
+    """Send agent messages to a WhatsApp number (images only when explicitly allowed)."""
+    for msg in messages:
+        if msg.get("role") == "user":
+            continue
+        if msg.get("image"):
+            data = image_bytes(msg["image"]) if (cfg.send_images and image_bytes) else None
+            if data:
+                media_id = client.upload_image(data)
+                client.send({"messaging_product": "whatsapp", "recipient_type": "individual", "to": to,
+                             "type": "image", "image": {"id": media_id, "caption": _cut(msg.get("text") or "", 1024)}})
+                if not msg.get("buttons"):
+                    continue
+                msg = msg | {"text": "👆"}
+            else:
+                msg = msg | {"text": (msg.get("text") or "") + "\n(image visible dans l'application)"}
+        for payload in to_cloud_payloads(to, msg):
+            client.send(payload)
+
+
+def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None, image_bytes=None) -> APIRouter:
+    """``agent_for(midwife_id)`` returns the Agent of that midwife; ``image_bytes(url)`` resolves agent images."""
     client = client or CloudClient(cfg)
     r = APIRouter()
     seen: dict[str, None] = {}  # ids of messages already handled (insertion-ordered, bounded)
@@ -167,11 +195,7 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None) ->
                 continue
             if event["type"] == "image":
                 event["data"] = client.download(event.pop("media_id"))
-            for msg in agent_for(midwife).handle(event)[1:]:
-                if msg.get("image") and not cfg.send_images:
-                    msg = msg | {"text": msg["text"] + "\n(image visible dans l'application)"}
-                for payload in to_cloud_payloads(sender, msg):
-                    client.send(payload)
+            deliver(cfg, client, sender, agent_for(midwife).handle(event)[1:], image_bytes)
             if mid is not None:  # only once handled: a failure lets Meta's re-delivery try again
                 seen[mid] = None
                 while len(seen) > 5000:

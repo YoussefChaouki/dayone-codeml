@@ -20,24 +20,27 @@ The agent is channel-agnostic: the browser simulator and the WhatsApp Business P
 The simulator demonstrates the full offline-first design required by the challenge; the
 WhatsApp channel shows the same conversation in the midwives' everyday tool.
 
-## Setup (Meta test number)
+## Setup (Meta test number, about 20 min)
 
-1. Create a Meta app with the WhatsApp product, get a **test phone number id** and a
-   temporary **access token**; add your own number as a test recipient.
-2. Expose the phone app publicly over HTTPS (e.g. a tunnel to `127.0.0.1:8000`).
-3. Start it with:
+1. On developers.facebook.com: *Create app*, use case **"Connect with customers through
+   WhatsApp"** (the WhatsApp product is added). In *WhatsApp > API Setup*: note the **test
+   phone number id**, click *Generate access token* (temporary token), and add **your own
+   WhatsApp number** as a recipient (a code confirms it).
+2. In *App settings > Basic*: note the **App secret**.
+3. `cp whatsapp.env.example whatsapp.env` and fill it in (git-ignored; never paste tokens in a
+   chat or a commit).
+4. Terminal 1: `make demo-whatsapp` (server + phone/gateway with the channel on).
+   Terminal 2: `make tunnel` (after `brew install cloudflared`), note the
+   `https://....trycloudflare.com` URL.
+5. In *WhatsApp > Configuration > Webhook*: callback URL
+   `https://....trycloudflare.com/whatsapp/webhook`, verify token = `DAYONE_WHATSAPP_VERIFY_TOKEN`,
+   *Verify and save*, then subscribe to the **messages** field.
+6. From your phone, send "menu" to the test number. Photos sent in WhatsApp go through the same
+   pipeline; "record read" / "synchronised" notifications are pushed back to WhatsApp; with
+   `DAYONE_WHATSAPP_SEND_IMAGES=1` the masked page thumbnail and field crops are sent too.
 
-```bash
-export DAYONE_WHATSAPP_TOKEN=...            # access token
-export DAYONE_WHATSAPP_PHONE_ID=...         # phone number id
-export DAYONE_WHATSAPP_VERIFY_TOKEN=choose-a-secret
-export DAYONE_WHATSAPP_APP_SECRET=...       # to check X-Hub-Signature-256
-export DAYONE_WHATSAPP_SENDERS="2126XXXXXXXX=sf-amina"   # allowed numbers -> midwife id
-make demo
-```
-
-4. In the Meta app, set the webhook URL to `https://<tunnel>/whatsapp/webhook` with the
-   verify token above and subscribe to `messages`.
+The test number can reply freely within 24 h of your last message (WhatsApp's service window).
+The temporary token expires: regenerate it in *API Setup* if messages stop.
 
 Message mapping: ≤ 3 buttons → interactive reply buttons (titles cut at 20 characters),
 4-10 buttons → interactive list, otherwise plain text. Messages from numbers not in
