@@ -7,6 +7,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "welcome": "Bonjour 👋 Je suis l'assistante *DayOne*. Je recopie le registre à partir de photos ; "
                    "c'est vous qui validez. Que voulez-vous faire ?",
         "btn_new": "📷 Nouvelle fiche", "btn_queue": "📋 File d'attente", "btn_manual": "✍️ Saisie manuelle",
+        "menu_more": "Autre chose ?",
         "btn_records": "📁 Dossiers", "btn_show_record": "📁 Voir le dossier",
         "no_patients": "Aucune patiente enregistrée sur ce téléphone pour l'instant.",
         "pick_patient": "📁 Quel dossier ouvrir ? (vous pouvez aussi taper *dossier* suivi du code)",
@@ -37,8 +38,8 @@ STRINGS: dict[str, dict[str, str]] = {
         "cancelled": "Fiche annulée.",
         "processed": "🤖 La fiche du {date} a été lue : *{total}* champs, dont *{sure}* lus avec confiance et "
                      "*{doubt}* sur lesquels j'ai un doute.",
-        "btn_review_now": "🔎 Vérifier maintenant", "btn_later": "Plus tard",
-        "btn_retry_ai": "🔁 Relancer la lecture",
+        "btn_review_now": "🔎 Vérifier la fiche", "btn_later": "Plus tard",
+        "btn_retry_ai": "🔁 Relancer l'IA",
         "processing_failed": "⚠️ Je n'ai pas pu lire la fiche du {date} ({reason}). Elle reste enregistrée. "
                              "Vous pouvez la saisir à la main.",
         "review_field": "❓ ({k}/{n}) *{label}* — page {page}\nJe lis : *{value}*, mais je ne suis pas sûre "
@@ -108,6 +109,7 @@ STRINGS: dict[str, dict[str, str]] = {
         "welcome": "Hello 👋 I am the *DayOne* assistant. I copy the registry from photos; you validate. "
                    "What would you like to do?",
         "btn_new": "📷 New record", "btn_queue": "📋 Queue", "btn_manual": "✍️ Manual entry",
+        "menu_more": "Anything else?",
         "btn_records": "📁 Patients", "btn_show_record": "📁 Open the record",
         "no_patients": "No patient registered on this phone yet.",
         "pick_patient": "📁 Which record? (you can also type *record* followed by the code)",

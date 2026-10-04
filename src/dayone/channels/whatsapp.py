@@ -15,12 +15,14 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import logging
 import os
 from dataclasses import dataclass, field
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import PlainTextResponse
 
 log = logging.getLogger(__name__)
@@ -63,6 +65,9 @@ def to_cloud_payloads(to: str, message: dict) -> list[dict]:
     base = {"messaging_product": "whatsapp", "recipient_type": "individual", "to": to}
     if not buttons:
         return [base | {"type": "text", "text": {"body": _cut(text, 4096), "preview_url": False}}]
+    if len(text) > 1024:  # interactive bodies are limited: full text first, then the buttons
+        head = base | {"type": "text", "text": {"body": _cut(text, 4096), "preview_url": False}}
+        return [head] + to_cloud_payloads(to, message | {"text": "👇"})
     if len(buttons) <= 3:
         return [
             base
@@ -155,12 +160,14 @@ def deliver(cfg: WhatsAppConfig, client: CloudClient, to: str, messages: list[di
         if msg.get("image"):
             data = image_bytes(msg["image"]) if (cfg.send_images and image_bytes) else None
             if data:
+                # the image carries the details (e.g. "identifiers masked"), the message keeps the main line
+                head, _, rest = (msg.get("text") or "").partition("\n")
                 media_id = client.upload_image(data)
                 client.send({"messaging_product": "whatsapp", "recipient_type": "individual", "to": to,
-                             "type": "image", "image": {"id": media_id, "caption": _cut(msg.get("text") or "", 1024)}})
-                if not msg.get("buttons"):
+                             "type": "image", "image": {"id": media_id, "caption": _cut(rest or head, 1024)}})
+                if not msg.get("buttons") and not rest:
                     continue
-                msg = msg | {"text": "👆"}
+                msg = msg | {"text": head}
             else:
                 msg = msg | {"text": (msg.get("text") or "") + "\n(image visible dans l'application)"}
         for payload in to_cloud_payloads(to, msg):
@@ -185,7 +192,12 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None, im
         raw = await request.body()
         if not valid_signature(cfg.app_secret, raw, request.headers.get("X-Hub-Signature-256")):
             raise HTTPException(401, "bad signature")
-        for sender, event in parse_webhook(await request.json()):
+        # reading a photo takes seconds: never block the web server's event loop
+        await run_in_threadpool(handle_events, parse_webhook(json.loads(raw)))
+        return {"ok": True}
+
+    def handle_events(events: list[tuple[str, dict]]) -> None:
+        for sender, event in events:
             mid = event.pop("message_id", None)
             if mid is not None and mid in seen:  # Meta re-delivers webhooks: handle each message once
                 continue
@@ -200,6 +212,5 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None, im
                 seen[mid] = None
                 while len(seen) > 5000:
                     seen.pop(next(iter(seen)))
-        return {"ok": True}
 
     return r

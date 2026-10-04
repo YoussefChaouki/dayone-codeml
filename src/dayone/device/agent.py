@@ -70,6 +70,16 @@ def _msg(text: str, buttons: list[tuple[str, str]] | None = None, image: str | N
             "image": image}
 
 
+SHORT_TITLES = {
+    "fr": {"cover": "Couverture", "history": "Antécédents", "pregnancy": "Grossesse", "delivery": "Accouchement",
+           "pp_early_mother": "PP précoce — mère", "pp_early_newborn": "PP précoce — bébé",
+           "pp_late_mother": "PP tardif — mère", "pp_late_newborn": "PP tardif — bébé"},
+    "en": {"cover": "Cover", "history": "History", "pregnancy": "Pregnancy", "delivery": "Delivery",
+           "pp_early_mother": "Early PP — mother", "pp_early_newborn": "Early PP — baby",
+           "pp_late_mother": "Late PP — mother", "pp_late_newborn": "Late PP — baby"},
+}
+
+
 def page_title(page_type: str | None, lang: str) -> str:
     if page_type is None:
         return "?"
@@ -294,7 +304,7 @@ class Agent:
         n = len(self._records_to_review())
         if n:
             buttons.insert(0, ("menu:review", self.tr("btn_review_pending", n=n)))
-        return [_msg(self.tr("welcome") if greet else "👇", buttons)]
+        return [_msg(self.tr("welcome") if greet else self.tr("menu_more"), buttons)]
 
     def _records_to_review(self) -> list:
         recs = self.store.list_records({RecordState.AI_PROCESSED, RecordState.NEEDS_REVIEW,
@@ -840,7 +850,7 @@ class Agent:
         self._set_mode("manual_pick", record_id=rid)
         captured = [p.page_type for p in self.store.list_pages(rid) if p.page_type]
         order = [pt for pt in PAGE_ORDER if pt.value in captured] or PAGE_ORDER
-        buttons = [(f"manual:page:{pt.value}", page_title(pt.value, self.lang)) for pt in order]
+        buttons = [(f"manual:page:{pt.value}", SHORT_TITLES[self.lang][pt.value]) for pt in order]  # ≤ 24 chars
         if rec.payload.get("fields"):
             buttons.append(("manual:finish", self.tr("btn_finish")))
         return [_msg(self.tr("manual_pick_page"), buttons)]

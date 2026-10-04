@@ -69,6 +69,8 @@ def display_value(fid: str, value: Any, lang: str = "fr") -> str:
             return value
     if isinstance(value, str) and value in table and (spec.vocabulary or spec.value_type == ValueType.ENUM):
         return table[value]
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
     if spec.value_type == ValueType.GEST_AGE and value is not None:
         return f"{value} SA" if lang == "fr" else f"{value} weeks"
     if spec.unit and value is not None and not isinstance(value, str):
@@ -249,7 +251,8 @@ def _items(profile: dict, fids: list[str], lang: str, with_label: bool = True) -
         if v is None:
             continue
         val = display_value(fid, v, lang)
-        parts.append(f"{label(fid, lang)} {val}" if with_label else val)
+        name = re.sub(r"\s*\(.*\)", "", label(fid, lang))  # the unit is already in the value
+        parts.append(f"{name} {val}" if with_label else val)
     return " · ".join(parts)
 
 
