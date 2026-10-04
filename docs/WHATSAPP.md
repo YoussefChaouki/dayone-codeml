@@ -1,49 +1,67 @@
-# Connecting the real WhatsApp (bonus — after the 100 % local validation)
+# Brancher le vrai WhatsApp (bonus — après la validation 100 % locale)
 
-The agent is channel-agnostic: the browser simulator and the WhatsApp Business Platform
-(Cloud API) drive the same engine. The adapter is
-[`channels/whatsapp.py`](../src/dayone/channels/whatsapp.py) and is **off by default**.
+L'agent ne dépend pas du canal : le simulateur dans le navigateur et la WhatsApp Business
+Platform (Cloud API) pilotent le même moteur. Le canal est
+[`channels/whatsapp.py`](../src/dayone/channels/whatsapp.py) ; il est **désactivé par défaut**.
+Il a été testé de bout en bout avec un vrai téléphone le 2026-10-04 : c'est la
+[vidéo de démonstration](https://github.com/YoussefChaouki/dayone-codeml/releases/download/v1.0/DayOne-demo-x1.25.mp4).
 
-> ⚠️ With the real WhatsApp, messages (and photos) go through Meta's servers. Use it only
-> with the synthetic specimen data. Field-crop images are not sent unless
-> `DAYONE_WHATSAPP_SEND_IMAGES=1`.
+> ⚠️ Avec le vrai WhatsApp, les messages (et les photos) passent par les serveurs de Meta. À
+> utiliser uniquement avec les données synthétiques du spécimen. Les recadrages de champs ne sont
+> envoyés que si `DAYONE_WHATSAPP_SEND_IMAGES=1`.
 
-## What changes in the architecture
+## Ce qui change dans l'architecture
 
-| | Simulated phone app (default) | Real WhatsApp |
+| | Application téléphone simulée (par défaut) | Vrai WhatsApp |
 |---|---|---|
-| Where the agent runs | on the phone | on a gateway (district server) |
-| Offline capture | yes, encrypted store on the phone | WhatsApp itself queues the photos until the network is back |
-| Manual entry offline | yes | no (needs the network to reach the gateway) |
-| Local encryption | phone store (PIN-derived key) | gateway store; phone side is WhatsApp's |
+| Où tourne l'agent | sur le téléphone | sur une passerelle (serveur de district) |
+| Capture hors ligne | oui, stockage chiffré sur le téléphone | WhatsApp garde lui-même les photos en attente jusqu'au retour du réseau |
+| Saisie manuelle hors ligne | oui | non (il faut du réseau pour joindre la passerelle) |
+| Chiffrement local | stockage du téléphone (clé dérivée du PIN) | stockage de la passerelle ; côté téléphone, celui de WhatsApp |
 
-The simulator demonstrates the full offline-first design required by the challenge; the
-WhatsApp channel shows the same conversation in the midwives' everyday tool.
+Le simulateur montre toute la conception « hors ligne d'abord » demandée par le défi ; le canal
+WhatsApp montre la même conversation dans l'outil quotidien des sages-femmes.
 
-## Setup (Meta test number, about 20 min)
+## Mise en place (numéro de test Meta, environ 20 min)
 
-1. On developers.facebook.com: *Create app*, use case **"Connect with customers through
-   WhatsApp"** (the WhatsApp product is added). In *WhatsApp > API Setup*: note the **test
-   phone number id**, click *Generate access token* (temporary token), and add **your own
-   WhatsApp number** as a recipient (a code confirms it).
-2. In *App settings > Basic*: note the **App secret**.
-3. `cp whatsapp.env.example whatsapp.env` and fill it in (git-ignored; never paste tokens in a
-   chat or a commit).
-4. Terminal 1: `make demo-whatsapp` (server + phone/gateway with the channel on).
-   Terminal 2: `make tunnel` (after `brew install cloudflared`), note the
-   `https://....trycloudflare.com` URL.
-5. In *WhatsApp > Configuration > Webhook*: callback URL
-   `https://....trycloudflare.com/whatsapp/webhook`, verify token = `DAYONE_WHATSAPP_VERIFY_TOKEN`,
-   *Verify and save*, then subscribe to the **messages** field.
-6. From your phone, send "menu" to the test number. Photos sent in WhatsApp go through the same
-   pipeline; "record read" / "synchronised" notifications are pushed back to WhatsApp; with
-   `DAYONE_WHATSAPP_SEND_IMAGES=1` the masked page thumbnail and field crops are sent too.
+1. Sur developers.facebook.com : *Créer une app*, cas d'usage **« Se connecter avec les clients
+   via WhatsApp »** (le produit WhatsApp est ajouté). Dans *WhatsApp > Configuration de l'API* :
+   noter l'**identifiant du numéro de téléphone de test**, cliquer sur *Générer un jeton d'accès*
+   (jeton temporaire), et ajouter **son propre numéro WhatsApp** comme destinataire (un code le
+   confirme).
+2. Dans *Paramètres de l'app > Général* : noter la **clé secrète de l'app**.
+3. `cp whatsapp.env.example whatsapp.env` et le remplir (ignoré par git ; ne jamais coller de
+   jeton dans une conversation ni dans un commit).
+4. Terminal 1 : `make demo-whatsapp` (serveur + téléphone/passerelle avec le canal activé).
+   Terminal 2 : `make tunnel` (après `brew install cloudflared`), noter l'URL
+   `https://….trycloudflare.com`.
+5. Dans *WhatsApp > Configuration > Webhook* : URL de rappel
+   `https://….trycloudflare.com/whatsapp/webhook`, jeton de vérification =
+   `DAYONE_WHATSAPP_VERIFY_TOKEN`, *Vérifier et enregistrer*, puis s'abonner au champ
+   **messages**.
+6. **Abonner l'app au compte WhatsApp Business** (sinon Meta n'envoie aucun message au webhook,
+   sans erreur visible) : `POST https://graph.facebook.com/v25.0/<WABA_ID>/subscribed_apps` avec le
+   jeton d'accès. L'identifiant du compte (WABA) est affiché dans *Configuration de l'API*.
+7. Depuis son téléphone, envoyer « menu » au numéro de test. Les photos envoyées dans WhatsApp
+   passent par le même pipeline ; les notifications « fiche lue » / « synchronisée » sont
+   renvoyées dans WhatsApp ; avec `DAYONE_WHATSAPP_SEND_IMAGES=1`, la vignette masquée de la page
+   et les recadrages de champs sont aussi envoyés.
 
-The test number can reply freely within 24 h of your last message (WhatsApp's service window).
-The temporary token expires: regenerate it in *API Setup* if messages stop.
+Le numéro de test peut répondre librement pendant 24 h après le dernier message reçu (fenêtre de
+service de WhatsApp). Le jeton temporaire expire : le régénérer dans *Configuration de l'API* si
+les messages s'arrêtent.
 
-Message mapping: ≤ 3 buttons → interactive reply buttons (titles cut at 20 characters),
-4-10 buttons → interactive list, otherwise plain text. Messages from numbers not in
-`DAYONE_WHATSAPP_SENDERS` are ignored and never stored. Verified against the Cloud API
-documentation (Graph API v25.0) on 2026-10-03; covered by `tests/test_whatsapp_channel.py`
-(payload shapes, webhook parsing, signature check). Not tested against Meta's live servers.
+**Sécurité du tunnel** : le tunnel expose le port 8000 sur Internet. Toute requête qui arrive par
+le tunnel (en-têtes `cf-ray` / `cf-connecting-ip`) est refusée, sauf `/whatsapp/…` dont chaque
+appel est authentifié par la signature `X-Hub-Signature-256` de Meta. Les coulisses de la démo
+restent accessibles en local seulement.
+
+Correspondance des messages : ≤ 3 boutons → boutons de réponse interactifs (titres coupés à 20
+caractères), 4 à 10 boutons → liste interactive, sinon texte simple. Un texte trop long est
+découpé avant les boutons. Les messages des numéros absents de `DAYONE_WHATSAPP_SENDERS` sont
+ignorés et jamais stockés ; un message déjà reçu (même identifiant, mémorisé pour les 5 000 derniers
+jusqu'au redémarrage de la passerelle) n'est pas retraité ; un bouton
+d'un ancien message répond « Ce bouton n'est plus valable ». Vérifié par rapport à la
+documentation de la Cloud API (Graph API v25.0) le 2026-10-03 ; couvert par
+`tests/test_whatsapp_channel.py` (forme des messages, lecture du webhook, contrôle de signature,
+restriction du tunnel) et testé en conditions réelles le 2026-10-04.

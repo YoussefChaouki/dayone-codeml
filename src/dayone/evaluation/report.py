@@ -106,7 +106,12 @@ def calibrate(eval_dir: Path, run: str, model_path: Path) -> ConfidenceModel:
 
 
 def _pct(v: float | None) -> str:
-    return "—" if v is None else f"{100 * v:.1f} %"
+    return "—" if v is None else f"{100 * v:.1f} %".replace(".", ",")
+
+
+def _num(v: float, digits: int = 2) -> str:
+    """French decimal comma for the generated (French) reports."""
+    return f"{v:.{digits}f}".replace(".", ",")
 
 
 def _figures(test: list[FieldOutcome], rc: list[dict], out_dir: Path) -> list[str]:
@@ -121,12 +126,12 @@ def _figures(test: list[FieldOutcome], rc: list[dict], out_dir: Path) -> list[st
     rel = summ.get("calibration", {}).get("reliability", [])
     if rel:
         fig, ax = plt.subplots(figsize=(4.2, 4.2))
-        ax.plot([0, 1], [0, 1], color="#999", lw=1, ls="--", label="perfect calibration")
+        ax.plot([0, 1], [0, 1], color="#999", lw=1, ls="--", label="calibration parfaite")
         ax.plot([r["mean_confidence"] for r in rel], [r["accuracy"] for r in rel], marker="o", color="#2a6f97",
                 label="pipeline")
-        ax.set_xlabel("confidence")
-        ax.set_ylabel("observed accuracy")
-        ax.set_title("Reliability (test split, OCR fields)")
+        ax.set_xlabel("confiance")
+        ax.set_ylabel("exactitude observée")
+        ax.set_title("Fiabilité (test, champs OCR)")
         ax.legend(loc="lower right", frameon=False)
         fig.tight_layout()
         fig.savefig(out_dir / "reliability.png", dpi=150)
@@ -135,9 +140,9 @@ def _figures(test: list[FieldOutcome], rc: list[dict], out_dir: Path) -> list[st
     if rc:
         fig, ax = plt.subplots(figsize=(4.8, 3.6))
         ax.plot([r["coverage"] for r in rc], [100 * r["silent_error_rate"] for r in rc], color="#2a6f97")
-        ax.set_xlabel("share of handwritten fields auto-accepted")
-        ax.set_ylabel("error among auto-accepted (%)")
-        ax.set_title("Risk–coverage (test split)")
+        ax.set_xlabel("part des champs manuscrits acceptés sans question")
+        ax.set_ylabel("erreurs parmi les acceptés (%)")
+        ax.set_title("Risque–couverture (test)")
         fig.tight_layout()
         fig.savefig(out_dir / "risk_coverage.png", dpi=150)
         plt.close(fig)
@@ -264,7 +269,7 @@ def baselines(eval_dir: Path, test) -> dict:
 
 
 def _ci_txt(ci) -> str:
-    return f" (95 % CI {100 * ci[0]:.1f}–{100 * ci[1]:.1f})" if ci else ""
+    return f" (IC 95 % {_num(100 * ci[0], 1)}–{_num(100 * ci[1], 1)})" if ci else ""
 
 
 def update_readme(r: dict, readme: Path) -> None:
@@ -277,43 +282,62 @@ def update_readme(r: dict, readme: Path) -> None:
     med = r["medium_only"]
     sc = r["by_script_medium"]
     rows = [
-        "| Test split: 40 pages of 5 held-out patients (same 5 handwriting fonts as calibration) | |",
+        "| Test : 40 pages de 5 patientes tenues à l'écart (mêmes 5 polices manuscrites que la calibration) | |",
         "|---|---|",
-        f"| **Extraction accuracy**, handwritten fields, before any review (n = {hw['n']}; unaltered renders + "
-        f"simulated mild + medium photos) | **{_pct(hw['accuracy'])}**{_ci_txt(r.get('ci_accuracy'))} |",
-        f"| … medium photos only (WhatsApp-like; FR + AR + EN) | {_pct(med['summary']['handwritten']['accuracy'])}"
+        f"| **Exactitude de l'extraction**, champs manuscrits, avant toute révision (n = {hw['n']} ; rendus "
+        f"d'origine + photos simulées légères et moyennes) | **{_pct(hw['accuracy'])}**{_ci_txt(r.get('ci_accuracy'))} |",
+        f"| … photos moyennes seules (type WhatsApp ; FR + AR + EN) | {_pct(med['summary']['handwritten']['accuracy'])}"
         f"{_ci_txt(med.get('ci_accuracy'))} |",
-        f"| … unaltered render / mild / medium (French specimen) | {_pct(lv.get('clean', {}).get('accuracy'))} / "
-        f"{_pct(lv.get('mild', {}).get('accuracy'))} / {_pct(lv.get('medium', {}).get('accuracy'))} |",
-        f"| … medium photos: Arabic-script / Latin-script fields | {_pct(sc.get('arabic_script', {}).get('accuracy'))} / "
-        f"{_pct(sc.get('latin', {}).get('accuracy'))} |",
+        f"| … rendu d'origine / photo légère / photo moyenne (spécimen français) | "
+        f"{_pct(lv.get('clean', {}).get('accuracy'))} / {_pct(lv.get('mild', {}).get('accuracy'))} / "
+        f"{_pct(lv.get('medium', {}).get('accuracy'))} |",
+        f"| … photos moyennes : champs en lettres arabes / en écriture latine | "
+        f"{_pct(sc.get('arabic_script', {}).get('accuracy'))} / {_pct(sc.get('latin', {}).get('accuracy'))} |",
     ]
     uf = r.get("unseen_fonts")
     if uf:
-        rows.append(f"| … medium photos in 2 handwriting fonts never seen in development | "
-                    f"{_pct(uf['unseen']['summary']['accuracy'])}{_ci_txt(uf['unseen']['ci_accuracy'])} (same pages "
-                    f"in the original fonts: {_pct(uf['original_fonts_same_pages']['summary']['accuracy'])}) |")
+        rows.append(f"| … photos moyennes avec 2 polices manuscrites jamais vues pendant le développement | "
+                    f"{_pct(uf['unseen']['summary']['accuracy'])}{_ci_txt(uf['unseen']['ci_accuracy'])} (mêmes pages "
+                    f"dans les polices d'origine : {_pct(uf['original_fonts_same_pages']['summary']['accuracy'])}) |")
     rows += [
-        f"| Handwritten fields accepted without any question | {_pct(hw['auto_accepted_share'])} |",
-        f"| **Wrong among the values accepted without a question** | **{_pct(o['silent_error_rate'])}**"
-        f"{_ci_txt(r.get('ci_silent'))}; medium photos {_pct(med['summary']['silent_error_rate'])}; "
-        f"Arabic-script fields {_pct(sc.get('arabic_script', {}).get('silent_error_rate'))} |",
-        f"| Tick boxes / blank fields recognised | {_pct(o['checkbox']['accuracy'])} / "
-        f"{o['blank']['n'] - o['blank']['errors']} of {o['blank']['n']} |",
-        f"| Page type recognised | {_pct(r['page_classification_accuracy'])} (thresholds set on all pages, optimistic) |",
+        f"| Champs manuscrits acceptés sans aucune question | {_pct(hw['auto_accepted_share'])} |",
+        f"| **Valeurs fausses parmi celles acceptées sans question** | **{_pct(o['silent_error_rate'])}**"
+        f"{_ci_txt(r.get('ci_silent'))} ; photos moyennes {_pct(med['summary']['silent_error_rate'])} ; "
+        f"champs en lettres arabes {_pct(sc.get('arabic_script', {}).get('silent_error_rate'))} |",
+        f"| Cases à cocher / champs vides reconnus | {_pct(o['checkbox']['accuracy'])} / "
+        f"{o['blank']['n'] - o['blank']['errors']} sur {o['blank']['n']} |",
+        f"| Type de page reconnu | {_pct(r['page_classification_accuracy'])} (seuils réglés sur toutes les pages, "
+        "optimiste) |",
     ]
-    tau_note = f"Acceptance threshold τ = {r['accept_threshold']:.2f}, chosen on the calibration patients 1-5 " \
-        "(it is the floor of the search grid; "
+    tau_note = f"Seuil d'acceptation τ = {_num(r['accept_threshold'])}, choisi sur les patientes de calibration 1-5 " \
+        "(c'est le plancher de la grille de recherche ; "
     tf = r.get("tau_without_floor")
-    tau_note += (f"without the floor the rule gives τ = {tf['tau']:.2f} and {_pct(tf['silent_error_rate'])} on test). "
-                 if tf else "). ")
+    tau_note += (f"sans ce plancher, la règle donne τ = {_num(tf['tau'])} et {_pct(tf['silent_error_rate'])} "
+                 "en test). " if tf else "). ")
     block = "<!-- RESULTS:START -->\n" + "\n".join(rows) + "\n\n" + tau_note + \
-        "The 2 % silent-error target is **not demonstrated** on test (its interval crosses 2 %). Full tables, " \
-        "calibration and risk–coverage: [docs/RESULTS.md](docs/RESULTS.md).\n<!-- RESULTS:END -->"
+        "L'objectif de 2 % d'erreurs silencieuses n'est **pas démontré** en test (son intervalle franchit 2 %). " \
+        "Tableaux complets, calibration et risque–couverture : [docs/RESULTS.md](docs/RESULTS.md).\n<!-- RESULTS:END -->"
     text = readme.read_text()
     a, b = text.find("<!-- RESULTS:START -->"), text.find("<!-- RESULTS:END -->")
     if a >= 0 and b > a:
         readme.write_text(text[:a] + block + text[b + len("<!-- RESULTS:END -->"):])
+
+
+LEVEL_NAMES = {"clean": "rendu d'origine (non altéré)", "mild": "photo légère", "medium": "photo moyenne",
+               "severe": "photo très dégradée"}
+SCRIPT_NAMES = {"arabic_script": "lettres arabes", "eastern_digits": "chiffres arabes orientaux seuls",
+                "latin": "écriture latine"}
+STRATUM_NAMES = {"medium": "photos moyennes", "arabic_script_medium": "lettres arabes, photos moyennes",
+                 "clean": "rendus d'origine"}
+ROW_HEADER = "| n | Exactitude | Acceptés sans question | Erreurs silencieuses |"
+PAGE_NAMES = {"cover": "Couverture / établissement", "history": "Identification et antécédents",
+              "pregnancy": "Grossesse actuelle", "delivery": "Accouchement",
+              "pp_early_mother": "Post-partum précoce — mère", "pp_early_newborn": "Post-partum précoce — nouveau-né",
+              "pp_late_mother": "Post-partum tardif — mère", "pp_late_newborn": "Post-partum tardif — nouveau-né"}
+VALUE_TYPE_NAMES = {"bool": "oui / non", "bp": "tension", "code": "code patiente", "date": "date",
+                    "enum": "vocabulaire fermé", "float": "nombre décimal", "gest_age": "âge gestationnel",
+                    "int": "nombre entier", "text": "texte libre"}
+LANGUAGE_NAMES = {"ar": "arabe", "en": "anglais", "fr": "français"}
 
 
 def render_markdown(r: dict, figs: list[str]) -> str:
@@ -322,127 +346,143 @@ def render_markdown(r: dict, figs: list[str]) -> str:
     cal = o.get("calibration", {})
     med = r["medium_only"]
     tf = r.get("tau_without_floor")
+    nan = float("nan")
     L = [
-        "# Results",
+        "# Résultats",
         "",
-        "> Generated by `make report` from the stored predictions — do not edit by hand.",
-        f"> Test split: patients 6-10 ({r['n_items']} captures of 40 pages). Confidence model `{r['model']}`, "
-        f"acceptance threshold τ = {r['accept_threshold']:.2f} chosen out-of-fold on the calibration patients 1-5.",
-        "> Intervals: 95 % percentile bootstrap over pages (2,000 resamples, seed 0) — fields of a page are correlated.",
+        "> Généré par `make report` à partir des prédictions enregistrées — ne pas modifier à la main.",
+        f"> Jeu de test : patientes 6-10 ({r['n_items']} captures de 40 pages). Modèle de confiance `{r['model']}`, "
+        f"seuil d'acceptation τ = {_num(r['accept_threshold'])} choisi hors échantillon sur les patientes de "
+        "calibration 1-5.",
+        "> Intervalles : bootstrap percentile à 95 % sur les pages (2 000 tirages, graine 0) — les champs d'une même "
+        "page sont corrélés.",
         "",
-        "**Read this first.** The test patients are new *values* written in the *same five handwriting fonts* as the "
-        "calibration patients (each patient = one font, paired across splits); see the unseen-font experiment below. "
-        "`clean` captures are the organisers' renders, unaltered. Arabic and English pages are font-rendered.",
+        "**À lire d'abord.** Les patientes de test sont de nouvelles *valeurs* écrites dans les *mêmes cinq polices "
+        "manuscrites* que les patientes de calibration (une patiente = une police, appariées entre les deux jeux) ; "
+        "voir l'expérience « écriture jamais vue » plus bas. Les captures `clean` sont les rendus des organisateurs, "
+        "non altérés. Les pages arabes et anglaises sont rendues avec des polices.",
         "",
-        "## Headline (clean + mild + medium captures, French / Arabic / English)",
+        "## Synthèse (rendus d'origine + photos légères + photos moyennes ; français / arabe / anglais)",
         "",
-        "| Metric | Value |",
+        "| Mesure | Valeur |",
         "|---|---|",
-        f"| Handwritten fields evaluated | {hw['n']} (40 pages, 5 patients) |",
-        f"| **Extraction accuracy** (value right, before review) | **{_pct(hw['accuracy'])}**{_ci_txt(r.get('ci_accuracy'))} |",
-        f"| Accepted without a question | {_pct(hw['auto_accepted_share'])} |",
-        f"| **Wrong among the values accepted without a question** (silent errors) | **{_pct(o['silent_error_rate'])}**"
-        f"{_ci_txt(r.get('ci_silent'))} |",
-        f"| Silent errors over every field (text, blanks, dashes, tick boxes) | {_pct(o['all_fields_silent_error_rate'])} |",
-        f"| Fields the midwife is asked about (all fields) | {_pct(o['all_fields_review_share'])} |",
-        f"| Handwritten values wrongly read as blank | {_pct(hw['missed_as_blank_share'])} |",
-        f"| Blank fields recognised as blank | {o['blank']['n'] - o['blank']['errors']} of {o['blank']['n']} |",
-        f"| Dashes recognised as not applicable | {_pct(o['dash']['accuracy'])} (n={o['dash']['n']}) |",
-        f"| Tick boxes | {_pct(o['checkbox']['accuracy'])} (n={o['checkbox']['n']}) |",
-        f"| Page type classification | {_pct(r['page_classification_accuracy'])} (thresholds set on all 80 pages: optimistic) |",
-        f"| Confidence calibration, OCR fields: ECE / Brier / AUROC | {cal.get('ece', float('nan')):.3f} / "
-        f"{cal.get('brier', float('nan')):.3f} / {cal.get('auroc') or float('nan'):.3f} |",
+        f"| Champs manuscrits évalués | {hw['n']} (40 pages, 5 patientes) |",
+        f"| **Exactitude de l'extraction** (bonne valeur, avant révision) | **{_pct(hw['accuracy'])}**"
+        f"{_ci_txt(r.get('ci_accuracy'))} |",
+        f"| Acceptés sans question | {_pct(hw['auto_accepted_share'])} |",
+        f"| **Valeurs fausses parmi celles acceptées sans question** (erreurs silencieuses) | "
+        f"**{_pct(o['silent_error_rate'])}**{_ci_txt(r.get('ci_silent'))} |",
+        f"| Erreurs silencieuses sur tous les champs (texte, vides, tirets, cases) | "
+        f"{_pct(o['all_fields_silent_error_rate'])} |",
+        f"| Champs sur lesquels la sage-femme est interrogée (tous champs) | {_pct(o['all_fields_review_share'])} |",
+        f"| Valeurs manuscrites lues à tort comme vides | {_pct(hw['missed_as_blank_share'])} |",
+        f"| Champs vides reconnus comme vides | {o['blank']['n'] - o['blank']['errors']} sur {o['blank']['n']} |",
+        f"| Tirets reconnus comme « non applicable » | {_pct(o['dash']['accuracy'])} (n={o['dash']['n']}) |",
+        f"| Cases à cocher | {_pct(o['checkbox']['accuracy'])} (n={o['checkbox']['n']}) |",
+        f"| Reconnaissance du type de page | {_pct(r['page_classification_accuracy'])} (seuils réglés sur les "
+        "80 pages : optimiste) |",
+        f"| Calibration de la confiance, champs OCR : ECE / Brier / AUROC | {_num(cal.get('ece', nan), 3)} / "
+        f"{_num(cal.get('brier', nan), 3)} / {_num(cal.get('auroc') or nan, 3)} |",
         "",
-        "**Medium photos only** (the WhatsApp-like condition, FR + AR + EN): accuracy "
-        f"{_pct(med['summary']['handwritten']['accuracy'])}{_ci_txt(med.get('ci_accuracy'))}, silent errors "
+        "**Photos moyennes seules** (la condition proche de WhatsApp, FR + AR + EN) : exactitude "
+        f"{_pct(med['summary']['handwritten']['accuracy'])}{_ci_txt(med.get('ci_accuracy'))}, erreurs silencieuses "
         f"{_pct(med['summary']['silent_error_rate'])}{_ci_txt(med.get('ci_silent'))}.",
         "",
-        "**Threshold.** The pre-registered rule takes the smallest τ meeting ≤ 2 % silent errors out-of-fold, but the "
-        "search grid started at 0.50 (an undeclared floor, see EVALUATION.md §7). "
-        + (f"Without the floor the rule gives τ = {tf['tau']:.2f}: {_pct(tf['silent_error_rate'])} silent errors and "
-           f"{_pct(tf['auto_accepted_share'])} accepted on test. " if tf else "")
-        + "Either way the 2 % target is **not demonstrated** on the test patients.",
+        "**Seuil.** La règle pré-enregistrée prend le plus petit τ qui respecte ≤ 2 % d'erreurs silencieuses hors "
+        "échantillon, mais la grille de recherche commençait à 0,50 (un plancher non déclaré, voir EVALUATION.md §7). "
+        + (f"Sans ce plancher, la règle donne τ = {_num(tf['tau'])} : {_pct(tf['silent_error_rate'])} d'erreurs "
+           f"silencieuses et {_pct(tf['auto_accepted_share'])} acceptés en test. " if tf else "")
+        + "Dans les deux cas, l'objectif de 2 % n'est **pas démontré** sur les patientes de test.",
         "",
-        "## By capture level (specimen pages, French)",
+        "## Par niveau de capture (pages du spécimen, français)",
         "",
-        "| Level | Handwritten n | Accuracy | Accepted w/o question | Silent errors | All fields | Retake requested |",
+        "| Niveau | n manuscrits | Exactitude | Acceptés sans question | Erreurs silencieuses | Tous champs | "
+        "Reprise demandée |",
         "|---|---|---|---|---|---|---|",
     ]
-    names = {"clean": "clean (unaltered render)", "mild": "mild", "medium": "medium", "severe": "severe"}
     for lvl in ("clean", "mild", "medium", "severe"):
         b = r["by_level_specimen"].get(lvl)
         if b:
-            L.append(f"| {names[lvl]} | {b['n_handwritten']} | {_pct(b['accuracy'])} | {_pct(b['auto_accepted_share'])} | "
-                     f"{_pct(b['silent_error_rate'])} | {_pct(b['all_fields_accuracy'])} | "
-                     f"{_pct(r['retake_requested_share_by_level'].get(lvl))} |")
-    L += ["", "`severe` captures are sent back by the on-device quality check; their row shows what would happen if "
-          "the midwife forced them through (most values wrong, many accepted: the quality gate is the protection).", "",
-          "## By script (medium photos)", "",
-          "What is actually written: Arabic letters, Eastern-Arabic digits only, or Latin script (French/English "
-          "words and Western digits, including on 'Arabic' pages).", "",
-          "| Script | n | Accuracy | Accepted w/o question | Silent errors |", "|---|---|---|---|---|"]
+            L.append(f"| {LEVEL_NAMES[lvl]} | {b['n_handwritten']} | {_pct(b['accuracy'])} | "
+                     f"{_pct(b['auto_accepted_share'])} | {_pct(b['silent_error_rate'])} | "
+                     f"{_pct(b['all_fields_accuracy'])} | {_pct(r['retake_requested_share_by_level'].get(lvl))} |")
+    L += ["", "Les photos très dégradées (`severe`) sont renvoyées par le contrôle qualité du téléphone ; leur ligne "
+          "montre ce qui arriverait si la sage-femme les forçait (la plupart des valeurs fausses, beaucoup acceptées : "
+          "c'est le contrôle qualité qui protège).", "",
+          "## Par écriture (photos moyennes)", "",
+          "Ce qui est réellement écrit : lettres arabes, chiffres arabes orientaux seuls, ou écriture latine (mots "
+          "français/anglais et chiffres occidentaux, y compris sur les pages « arabes »).", "",
+          "| Écriture " + ROW_HEADER, "|---|---|---|---|---|"]
     for k, b in r["by_script_medium"].items():
         ci = r["ci_by_script_medium"].get(k, {})
-        L.append(f"| {k} | {b['n_handwritten']} | {_pct(b['accuracy'])}{_ci_txt(ci.get('accuracy'))} | "
+        L.append(f"| {SCRIPT_NAMES.get(k, k)} | {b['n_handwritten']} | {_pct(b['accuracy'])}{_ci_txt(ci.get('accuracy'))} | "
                  f"{_pct(b['auto_accepted_share'])} | {_pct(b['silent_error_rate'])}{_ci_txt(ci.get('silent'))} |")
-    L += ["", "English fields are a small closed vocabulary (None, Normal, Negative, …) plus numbers, generated from "
-          "the same vocabularies the parser knows: their score says little about English handwriting.", "",
-          "## Language of the page mode (medium photos, for reference)", "",
-          "| Mode | n | Accuracy | Accepted w/o question | Silent errors |", "|---|---|---|---|---|"]
+    L += ["", "Les champs anglais forment un petit vocabulaire fermé (None, Normal, Negative…) plus des nombres, générés "
+          "à partir des vocabulaires que connaît l'analyseur : leur score dit peu de choses sur l'écriture anglaise.",
+          "", "## Par langue de la page (photos moyennes, pour information)", "",
+          "| Langue " + ROW_HEADER, "|---|---|---|---|---|"]
     for k, b in r["by_language"].items():
-        L.append(f"| {k} | {b['n_handwritten']} | {_pct(b['accuracy'])} | {_pct(b['auto_accepted_share'])} | "
+        L.append(f"| {LANGUAGE_NAMES.get(k, k)} | {b['n_handwritten']} | {_pct(b['accuracy'])} | "
+                 f"{_pct(b['auto_accepted_share'])} | "
                  f"{_pct(b['silent_error_rate'])} |")
     uf = r.get("unseen_fonts")
-    L += ["", "## Unseen handwriting (supplementary, pre-registered in EVALUATION.md §8)", ""]
+    L += ["", "## Écriture jamais vue (complémentaire, pré-enregistrée dans EVALUATION.md §8)", ""]
     if uf:
         u, s0 = uf["unseen"], uf["original_fonts_same_pages"]
-        L += ["| Same 40 test pages, medium photos | Accuracy | Silent errors |", "|---|---|---|",
-              f"| original fonts (seen in development) | {_pct(s0['summary']['accuracy'])}{_ci_txt(s0['ci_accuracy'])} | "
-              f"{_pct(s0['silent'])}{_ci_txt(s0['ci_silent'])} |",
-              f"| Indie Flower / Homemade Apple (never seen) | {_pct(u['summary']['accuracy'])}{_ci_txt(u['ci_accuracy'])} | "
-              f"{_pct(u['silent'])}{_ci_txt(u['ci_silent'])} |", "",
-              f"{uf['dropped_fields']} field(s) did not fit their box in the new fonts and are excluded."]
+        L += ["| Mêmes 40 pages de test, photos moyennes | Exactitude | Erreurs silencieuses |", "|---|---|---|",
+              f"| polices d'origine (vues pendant le développement) | {_pct(s0['summary']['accuracy'])}"
+              f"{_ci_txt(s0['ci_accuracy'])} | {_pct(s0['silent'])}{_ci_txt(s0['ci_silent'])} |",
+              f"| Indie Flower / Homemade Apple (jamais vues) | {_pct(u['summary']['accuracy'])}"
+              f"{_ci_txt(u['ci_accuracy'])} | {_pct(u['silent'])}{_ci_txt(u['ci_silent'])} |", "",
+              f"{uf['dropped_fields']} champ(s) ne tenai(en)t pas dans leur case avec les nouvelles polices et sont "
+              "exclus."]
     else:
-        L.append("Not run yet (`python -m dayone.evaluation.unseen_fonts build && … run`).")
-    L += ["", "## By page type (clean + mild + medium)", "",
-          "| Page | n | Accuracy | Accepted w/o question | Silent errors |", "|---|---|---|---|---|"]
+        L.append("Pas encore lancée (`make unseen`).")
+    L += ["", "## Par type de page (rendus d'origine + photos légères + photos moyennes)", "",
+          "| Page " + ROW_HEADER, "|---|---|---|---|---|"]
     for k, b in r["by_page_type"].items():
-        L.append(f"| {k} | {b['n_handwritten']} | {_pct(b['accuracy'])} | {_pct(b['auto_accepted_share'])} | "
+        L.append(f"| {PAGE_NAMES.get(k, k)} | {b['n_handwritten']} | {_pct(b['accuracy'])} | "
+                 f"{_pct(b['auto_accepted_share'])} | "
                  f"{_pct(b['silent_error_rate'])} |")
-    L += ["", "## By value type (clean + mild + medium)", "",
-          "| Type | n | Accuracy | Accepted w/o question | Silent errors |", "|---|---|---|---|---|"]
+    L += ["", "## Par type de valeur (rendus d'origine + photos légères + photos moyennes)", "",
+          "| Type " + ROW_HEADER, "|---|---|---|---|---|"]
     for k, b in r["by_value_type"].items():
         if b["n_handwritten"]:
-            L.append(f"| {k} | {b['n_handwritten']} | {_pct(b['accuracy'])} | {_pct(b['auto_accepted_share'])} | "
+            L.append(f"| {VALUE_TYPE_NAMES.get(k, k)} | {b['n_handwritten']} | {_pct(b['accuracy'])} | "
+                     f"{_pct(b['auto_accepted_share'])} | "
                      f"{_pct(b['silent_error_rate'])} |")
-    L += ["", "With 40 pages, differences of a few points between page or value types are within the noise.", "",
-          "## Trivial baselines", ""]
+    L += ["", "Avec 40 pages, des écarts de quelques points entre types de page ou de valeur restent dans le bruit.",
+          "", "## Références triviales", ""]
     bl = r.get("baselines", {})
     if bl:
-        L += ["| Field family | Baseline | Pipeline |", "|---|---|---|",
-              f"| Closed vocabularies and yes/no (n={bl['n_enum_bool']}) | most frequent answer per field (learnt on "
-              f"calibration): {_pct(bl['enum_bool_majority_accuracy'])} | {_pct(bl['enum_bool_pipeline_accuracy'])} |",
-              f"| Tick boxes | everything unticked: {_pct(bl['checkbox_all_unticked_accuracy'])} | "
+        L += ["| Famille de champs | Référence | Pipeline |", "|---|---|---|",
+              f"| Vocabulaires fermés et oui/non (n={bl['n_enum_bool']}) | réponse la plus fréquente par champ "
+              f"(apprise sur la calibration) : {_pct(bl['enum_bool_majority_accuracy'])} | "
+              f"{_pct(bl['enum_bool_pipeline_accuracy'])} |",
+              f"| Cases à cocher | tout décoché : {_pct(bl['checkbox_all_unticked_accuracy'])} | "
               f"{_pct(bl['checkbox_pipeline_accuracy'])} |",
-              "| Blank fields | \"everything blank\" also scores 100 % on blanks — read it with \"handwritten values "
-              "read as blank\" above | |"]
-    L += ["", "## Calibration", "", "All OCR fields (clean + mild + medium):", "",
-          "| Confidence bin | n | Mean confidence | Observed accuracy |", "|---|---|---|---|"]
+              "| Champs vides | « tout vide » fait aussi 100 % sur les vides — à lire avec « valeurs manuscrites lues "
+              "à tort comme vides » plus haut | |"]
+    L += ["", "## Calibration", "", "Tous les champs OCR (rendus d'origine + photos légères + photos moyennes) :", "",
+          "| Tranche de confiance | n | Confiance moyenne | Exactitude observée |", "|---|---|---|---|"]
     for row in cal.get("reliability", []):
-        L.append(f"| {row['bin']} | {row['n']} | {row['mean_confidence']:.2f} | {row['accuracy']:.2f} |")
-    L += ["", "By stratum (the overall ECE is dominated by the 0.9-1.0 bin of clean and mild captures):", "",
-          "| Stratum | n | ECE | AUROC |", "|---|---|---|---|"]
+        L.append(f"| {row['bin'].replace('.', ',')} | {row['n']} | {_num(row['mean_confidence'])} | "
+                 f"{_num(row['accuracy'])} |")
+    L += ["", "Par strate (l'ECE globale est dominée par la tranche 0,9-1,0 des rendus d'origine et des photos "
+          "légères) :", "", "| Strate | n | ECE | AUROC |", "|---|---|---|---|"]
     for k, v in r.get("calibration_by_stratum", {}).items():
         if v:
-            L.append(f"| {k} | {v.get('n')} | {v.get('ece', float('nan')):.3f} | {v.get('auroc') or float('nan'):.3f} |")
-    L += ["", "## Risk–coverage", "",
-          "Confidence threshold alone on OCR fields (the deployed rule also forces a review on repaired values and "
-          "rule flags, so it does not lie exactly on this curve).", "",
-          "| τ | Accepted | Error among accepted |", "|---|---|---|"]
+            L.append(f"| {STRATUM_NAMES.get(k, k)} | {v.get('n')} | {_num(v.get('ece', nan), 3)} | "
+                     f"{_num(v.get('auroc') or nan, 3)} |")
+    L += ["", "## Risque–couverture", "",
+          "Seuil de confiance seul, sur les champs OCR (la règle déployée force aussi une révision sur les valeurs "
+          "réparées et les alertes de cohérence : elle n'est donc pas exactement sur cette courbe).", "",
+          "| τ | Acceptés | Erreurs parmi les acceptés |", "|---|---|---|"]
     for row in r["risk_coverage"][::3]:
-        L.append(f"| {row['threshold']:.2f} | {_pct(row['coverage'])} | {_pct(row['silent_error_rate'])} |")
-    L += ["", f"Accuracy on captures accepted by the quality check: {_pct(r['accuracy_by_quality_gate'].get('accepted'))}; "
-          f"on captures it rejected: {_pct(r['accuracy_by_quality_gate'].get('rejected'))}.", ""]
+        L.append(f"| {_num(row['threshold'])} | {_pct(row['coverage'])} | {_pct(row['silent_error_rate'])} |")
+    L += ["", "Exactitude sur les captures acceptées par le contrôle qualité : "
+          f"{_pct(r['accuracy_by_quality_gate'].get('accepted'))} ; sur celles qu'il a refusées : "
+          f"{_pct(r['accuracy_by_quality_gate'].get('rejected'))}.", ""]
     for f in figs:
         L.append(f"![{f}](figures/{f})")
     return "\n".join(L) + "\n"

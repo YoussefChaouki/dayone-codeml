@@ -1,66 +1,73 @@
-# Record lifecycle
+# Cycle de vie d'une fiche
 
-A *record* is one registry photographed (or typed) in one session: one or more pages.
-States and transitions are enforced by [`device/lifecycle.py`](../src/dayone/device/lifecycle.py);
-any other transition raises `InvalidTransition`. Every transition is appended to the
-record's history with its time, actor (midwife, agent, sync) and reason — shown live in the
-demo's backstage panel.
+Une *fiche* est un registre photographié (ou saisi) au cours d'une session : une ou plusieurs
+pages. Les états et les transitions sont imposés par
+[`device/lifecycle.py`](../src/dayone/device/lifecycle.py) ; toute autre transition lève
+`InvalidTransition`. Chaque transition est ajoutée à l'historique de la fiche avec son heure,
+son auteur (sage-femme, agent, synchronisation) et sa raison — affichés en direct dans le panneau
+« coulisses » de la démo.
+
+Les noms d'états du code sont en anglais ; l'application affiche leur libellé français.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> CAPTURED: photos taken (encrypted on the phone)
-    CAPTURED --> PENDING_AI: session closed, pages queued
-    CAPTURED --> MANUAL_REVIEW_REQUIRED: manual entry / capture cancelled
-    PENDING_AI --> AI_PROCESSED: every page read (network back)
-    PENDING_AI --> PROCESSING_FAILED: a page could not be read (after retries)
-    PROCESSING_FAILED --> MANUAL_REVIEW_REQUIRED: midwife takes over
-    MANUAL_REVIEW_REQUIRED --> PENDING_AI: "retry the reading"
-    MANUAL_REVIEW_REQUIRED --> NEEDS_REVIEW: review the fields the AI did read
-    AI_PROCESSED --> NEEDS_REVIEW: shown to the midwife
-    NEEDS_REVIEW --> PENDING_AI: a page is retaken
-    NEEDS_REVIEW --> VALIDATED: every field confirmed / corrected
-    MANUAL_REVIEW_REQUIRED --> VALIDATED: manual entry completed
-    VALIDATED --> PATIENT_MATCHED: existing or new patient chosen
-    VALIDATED --> DUPLICATE_SUSPECTED: pages already registered with different values
-    VALIDATED --> MANUAL_REVIEW_REQUIRED: "I'm not sure" (match undecided, "decide now" later)
-    DUPLICATE_SUSPECTED --> PATIENT_MATCHED: midwife chose what to update
-    PATIENT_MATCHED --> REGISTERED: added to the longitudinal profile
-    REGISTERED --> SYNCED: server acknowledged
-    REGISTERED --> SYNC_FAILED: server error
-    SYNC_FAILED --> SYNCED: automatic retry
+    [*] --> CAPTURED: photos prises (chiffrées sur le téléphone)
+    CAPTURED --> PENDING_AI: session terminée, pages en file d'attente
+    CAPTURED --> MANUAL_REVIEW_REQUIRED: saisie manuelle / capture annulée
+    PENDING_AI --> AI_PROCESSED: toutes les pages lues (retour du réseau)
+    PENDING_AI --> PROCESSING_FAILED: une page n'a pas pu être lue (après relances)
+    PROCESSING_FAILED --> MANUAL_REVIEW_REQUIRED: la sage-femme prend la main
+    MANUAL_REVIEW_REQUIRED --> PENDING_AI: « relancer la lecture »
+    MANUAL_REVIEW_REQUIRED --> NEEDS_REVIEW: réviser les champs que l'IA a lus
+    AI_PROCESSED --> NEEDS_REVIEW: présentée à la sage-femme
+    NEEDS_REVIEW --> PENDING_AI: une page est reprise en photo
+    NEEDS_REVIEW --> VALIDATED: chaque champ confirmé / corrigé
+    MANUAL_REVIEW_REQUIRED --> VALIDATED: saisie manuelle terminée
+    VALIDATED --> PATIENT_MATCHED: patiente existante ou nouvelle choisie
+    VALIDATED --> DUPLICATE_SUSPECTED: pages déjà enregistrées avec des valeurs différentes
+    VALIDATED --> MANUAL_REVIEW_REQUIRED: « Je ne sais pas » (liaison non tranchée, « décider maintenant » plus tard)
+    DUPLICATE_SUSPECTED --> PATIENT_MATCHED: la sage-femme a choisi quoi mettre à jour
+    PATIENT_MATCHED --> REGISTERED: ajoutée au dossier longitudinal
+    REGISTERED --> SYNCED: accusé de réception du serveur
+    REGISTERED --> SYNC_FAILED: erreur serveur
+    SYNC_FAILED --> SYNCED: relance automatique
 ```
 
-| State (FR label) | Meaning | Needs network? | What happens next |
+| État (libellé affiché) | Signification | Réseau nécessaire ? | Étape suivante |
 |---|---|---|---|
-| CAPTURED (CAPTURÉ) | photos stored encrypted, PII masked | no | midwife taps *Terminer* |
-| PENDING_AI (EN_ATTENTE_IA) | page jobs in the outbox | yes | uploaded and read when online |
-| AI_PROCESSED (TRAITÉ_IA) | all extractions received | no | agent notifies the midwife |
-| NEEDS_REVIEW (À_RÉVISER) | doubtful fields being reviewed | no | confirm / edit / retake |
-| VALIDATED (VALIDÉ) | every field decided by the midwife | no | patient matching |
-| PATIENT_MATCHED (PATIENTE_LIÉE) | linked to a profile | no | registration |
-| REGISTERED (ENREGISTRÉ) | in the longitudinal profile, sync job queued | yes | pushed when online |
-| SYNCED (SYNCHRONISÉ) | acknowledged by the server | — | final (corrections after sync are out of scope) |
-| PROCESSING_FAILED (ÉCHEC_TRAITEMENT) | a page could not be read: server errors (4 attempts), model server down (10 attempts, back-off 2 s → 512 s, ≈ 17 min) or page not recognised | — | immediately handed over: MANUAL_REVIEW_REQUIRED |
-| SYNC_FAILED (ÉCHEC_SYNCHRONISATION) | server refused / failed | yes | retried with back-off until acknowledged |
-| DUPLICATE_SUSPECTED (DOUBLON_SUSPECTÉ) | re-digitised pages differ from the profile | no | midwife picks old/new per field |
-| MANUAL_REVIEW_REQUIRED (RÉVISION_MANUELLE_REQUISE) | AI cannot help, match undecided, or capture cancelled | no | manual entry, "retry the reading", review of fields already read, or "decide now" |
+| CAPTURED (CAPTURÉ) | photos stockées chiffrées, identifiants masqués | non | la sage-femme touche *Terminer* |
+| PENDING_AI (EN_ATTENTE_IA) | tâches des pages dans la file d'attente | oui | envoyées et lues dès que le réseau revient |
+| AI_PROCESSED (TRAITÉ_IA) | toutes les extractions reçues | non | l'agent prévient la sage-femme |
+| NEEDS_REVIEW (À_RÉVISER) | champs douteux en cours de révision | non | confirmer / corriger / reprendre la photo |
+| VALIDATED (VALIDÉ) | chaque champ tranché par la sage-femme | non | liaison patiente |
+| PATIENT_MATCHED (PATIENTE_LIÉE) | rattachée à un dossier | non | enregistrement |
+| REGISTERED (ENREGISTRÉ) | dans le dossier longitudinal, tâche de synchronisation en file | oui | envoyée dès que le réseau revient |
+| SYNCED (SYNCHRONISÉ) | accusé de réception du serveur | — | état final (les corrections après synchronisation sont hors périmètre) |
+| PROCESSING_FAILED (ÉCHEC_TRAITEMENT) | une page n'a pas pu être lue : erreurs serveur (4 tentatives), serveur de modèles indisponible (10 tentatives, attente 2 s → 512 s, ≈ 17 min) ou page non reconnue | — | transmise aussitôt : RÉVISION_MANUELLE_REQUISE |
+| SYNC_FAILED (ÉCHEC_SYNCHRONISATION) | le serveur a refusé ou échoué | oui | relancée avec attente croissante jusqu'à l'accusé de réception |
+| DUPLICATE_SUSPECTED (DOUBLON_SUSPECTÉ) | les pages renumérisées diffèrent du dossier | non | la sage-femme choisit l'ancienne ou la nouvelle valeur, champ par champ |
+| MANUAL_REVIEW_REQUIRED (RÉVISION_MANUELLE_REQUISE) | l'IA ne peut pas aider, liaison non tranchée, ou capture annulée | non | saisie manuelle, « relancer la lecture », révision des champs déjà lus, ou « décider maintenant » |
 
-## Why nothing is lost
+## Pourquoi rien n'est perdu
 
-1. The photo is masked, encrypted and committed before the midwife sees "Page reçue". A
-   photo awaiting "keep anyway" (quality warning) is still unmasked, so it is kept in memory
-   only and is lost — not stored — if the app dies; the midwife is asked to retake it.
-2. A state change and the outbox job it requires are written in one SQLite transaction
-   (WAL, `synchronous=FULL`); multi-step operations (registration: profile + link + two
-   transitions + sync job; processing failure) are a single transaction too.
-3. Jobs are idempotent on the server: `POST /v1/pages` is keyed by the page id,
-   `POST /v1/records` by record id + version. A lost response is replayed without creating
-   a duplicate.
-4. On start-up the sync engine re-creates any job a crash may have prevented and settles
-   records whose pages all answered before the crash (`SyncEngine.recover`).
-5. Offline is not an error: an offline attempt is not counted as a failure and the job
-   waits; only server errors consume attempts.
+1. La photo est masquée, chiffrée et écrite sur disque avant que la sage-femme voie « Page
+   reçue ». Une photo en attente de « garder quand même » (avertissement de qualité) n'est pas
+   encore masquée : elle reste donc seulement en mémoire et est perdue — pas stockée — si
+   l'application s'arrête ; on demande alors à la sage-femme de la reprendre.
+2. Un changement d'état et la tâche réseau qu'il nécessite sont écrits dans une seule
+   transaction SQLite (WAL, `synchronous=FULL`) ; les opérations en plusieurs étapes
+   (enregistrement : dossier + lien + deux transitions + tâche de synchronisation ; échec de
+   traitement) forment aussi une seule transaction.
+3. Les tâches sont idempotentes côté serveur : `POST /v1/pages` est indexé par l'identifiant de
+   page, `POST /v1/records` par identifiant de fiche + version. Une réponse perdue est rejouée
+   sans créer de doublon.
+4. Au démarrage, le moteur de synchronisation recrée toute tâche qu'un crash aurait pu empêcher
+   et finalise les fiches dont toutes les pages avaient reçu leur réponse avant le crash
+   (`SyncEngine.recover`).
+5. Être hors ligne n'est pas une erreur : une tentative hors ligne ne compte pas comme un échec
+   et la tâche attend ; seules les erreurs serveur consomment des tentatives.
 
-Verified by `tests/test_sync_offline.py` (offline capture, lost response, crash between
-upload and result, server errors, AI unavailable then retried, and a property-based chaos
-test) and `tests/test_agent_e2e.py` (crash in the middle of a registration rolls back).
+Vérifié par `tests/test_sync_offline.py` (capture hors ligne, réponse perdue, crash entre
+l'envoi et le résultat, erreurs serveur, IA indisponible puis relancée, et un test de chaos à
+base de propriétés) et `tests/test_agent_e2e.py` (un crash au milieu d'un enregistrement est
+annulé proprement).
