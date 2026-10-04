@@ -103,6 +103,16 @@ class Device:
 def create_app(device: Device) -> FastAPI:
     app = FastAPI(title="DayOne phone (simulated)")
     app.state.device = device
+
+    @app.middleware("http")
+    async def only_webhook_from_outside(request, call_next):
+        """Through a public tunnel (Cloudflare adds cf-* headers), only the WhatsApp webhook is reachable:
+        the simulator, its backstage panel, images and chat log stay local to the machine."""
+        from_tunnel = "cf-ray" in request.headers or "cf-connecting-ip" in request.headers
+        if from_tunnel and not request.url.path.startswith("/whatsapp/"):
+            return Response("not available from outside", status_code=403)
+        return await call_next(request)
+
     app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
     @app.get("/", response_class=HTMLResponse)

@@ -155,3 +155,15 @@ def test_background_notifications_are_pushed(tmp_path, server, registrar):
     rid = device.store.create_record("sf-amina", {"fields": {}})
     device._notify("synced", {"record_id": rid})
     assert pushed and "synchronisée" in pushed[0]["text"]
+
+
+def test_only_the_webhook_is_reachable_through_a_tunnel(tmp_path, server, registrar):
+    from dayone.device.app import Device, create_app
+    from dayone.device.sync import Network
+
+    device = Device(tmp_path / "phone", "2468", "sf-amina", "token-sf-amina", "http://unused", Network(online=True),
+                    http=server, registrar=registrar, background=False)
+    c = TestClient(create_app(device))
+    assert c.get("/api/state").status_code == 200  # local access
+    assert c.get("/api/state", headers={"cf-ray": "x"}).status_code == 403  # through the tunnel
+    assert c.get("/", headers={"cf-connecting-ip": "1.2.3.4"}).status_code == 403

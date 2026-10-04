@@ -191,9 +191,12 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None, im
     async def receive(request: Request) -> dict:
         raw = await request.body()
         if not valid_signature(cfg.app_secret, raw, request.headers.get("X-Hub-Signature-256")):
+            log.warning("whatsapp webhook REFUSED: bad signature (check DAYONE_WHATSAPP_APP_SECRET)")
             raise HTTPException(401, "bad signature")
+        events = parse_webhook(json.loads(raw))
+        log.warning("whatsapp webhook received: %d message(s)", len(events))
         # reading a photo takes seconds: never block the web server's event loop
-        await run_in_threadpool(handle_events, parse_webhook(json.loads(raw)))
+        await run_in_threadpool(handle_events, events)
         return {"ok": True}
 
     def handle_events(events: list[tuple[str, dict]]) -> None:
@@ -203,7 +206,7 @@ def router(cfg: WhatsAppConfig, agent_for, client: CloudClient | None = None, im
                 continue
             midwife = cfg.allowed_senders.get(sender)
             if midwife is None:  # unknown number: never processed, never stored
-                log.warning("message from an unregistered number ignored")
+                log.warning("whatsapp message from an unregistered number ignored (ends with %s)", (sender or "")[-4:])
                 continue
             if event["type"] == "image":
                 event["data"] = client.download(event.pop("media_id"))
