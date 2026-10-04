@@ -593,8 +593,9 @@ class Agent:
         statuses = [rec.payload["fields"][f].get("status") for f in rest]
         lines = [self.tr("rest_intro", n=len(rest))]
         blanks, na = statuses.count(FieldStatus.NOT_PROVIDED.value), statuses.count(FieldStatus.NOT_APPLICABLE.value)
-        if blanks or na:
-            lines.append(self.tr("rest_empty", blank=blanks, na=na))
+        parts = ([self.tr("empty_blank", n=blanks)] if blanks else []) + ([self.tr("empty_na", n=na)] if na else [])
+        if parts:
+            lines.append(self.tr("rest_empty", parts=self.tr("and").join(parts)))
         for fid in interesting[:12]:
             lines.append(f"• {label(fid, self.lang)} : {display(fid, rec.payload['fields'][fid], self.lang)}")
         if len(rest) > 12:
@@ -674,8 +675,13 @@ class Agent:
         cands = find_candidates(q, self.store.list_patients())
         self._set_mode("match", record_id=rid, candidates=[c.patient_id for c in cands])
         if plausible(cands):
-            lines = [self.tr("match_line", k=k, code=c.summary.get("code"), age=c.summary.get("age") or "?",
-                             edd=display_value("pregnancy.edd", c.summary.get("edd"), self.lang) if c.summary.get("edd") else "?",
+            def details(c) -> str:  # only what is known about the candidate
+                out = self.tr("match_age", v=c.summary["age"]) if c.summary.get("age") is not None else ""
+                if c.summary.get("edd"):
+                    out += self.tr("match_edd", v=display_value("pregnancy.edd", c.summary["edd"], self.lang))
+                return out
+
+            lines = [self.tr("match_line", k=k, code=c.summary.get("code"), details=details(c),
                              visits=c.summary.get("visits"), reasons=", ".join(c.reasons + c.conflicts) or "—")
                      for k, c in enumerate(cands, 1)]
             buttons = [(f"m:pick:{k}", self.tr("btn_patient", k=k)) for k in range(1, len(cands) + 1)]
