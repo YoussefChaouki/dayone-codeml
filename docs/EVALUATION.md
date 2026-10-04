@@ -122,3 +122,18 @@ All entries below were written **before** any metric of the final run was comput
   `register.py` accepts the sibling page when a page type is *expected* (the evaluation never
   passes one), and `Extractor(ocr_cache=False)` lets the server avoid the on-disk OCR cache
   (the evaluation keeps the default, cache on).
+
+## 8. Supplementary experiment — unseen handwriting (pre-registered 2026-10-03, before running it)
+
+* **Why.** The audit of the final run showed that each patient is written in one of five
+  handwriting fonts, shared between the calibration and test splits (1↔6, 2↔7, …): the test
+  split measures new *values*, not new *handwriting*.
+* **Question.** Does extraction hold on handwriting never seen during development?
+* **Data.** The 40 test-split pages (patients 6-10), re-written in French with two
+  handwriting fonts never used before (Indie Flower, Homemade Apple, alternating by page),
+  captured at the `medium` level (seeded). Fields whose text does not fit the box are left
+  out of the ground truth and counted.
+* **Frozen.** Same models, same confidence model and τ as the final run; nothing is tuned.
+* **Metrics.** Handwritten-field accuracy and silent-error rate, with 95 % page-bootstrap
+  intervals, compared with the same pages in their original fonts at `medium` level.
+* **Reporting rule.** Reported in `docs/RESULTS.md` whatever the outcome.
