@@ -766,6 +766,8 @@ class Agent:
 
         def keep_old(d: dict) -> None:
             decide(payload, d["field_id"], d["old"]["status"], d["old"].get("value"), "confirmed", self.midwife, now)
+            if d["field_id"] == "cover.registry_code":
+                payload.pop("code", None)  # the kept code on file wins over a code typed for this record
 
         if arg == "old":
             for d in diffs:
@@ -804,7 +806,7 @@ class Agent:
         self._set_mode("idle")
         self.kick_sync()
         sync = self.tr("sync_now") if self.is_online() else self.tr("sync_pending")
-        code = (profile.get("codes") or ["?"])[0]
+        code = (profile.get("codes") or ["?"])[-1]
         return [_msg(self.tr("registered", code=code, sync=sync), [(f"p:show:{pid}", self.tr("btn_show_record"))])] \
             + self._menu(greet=False)
 
@@ -827,7 +829,7 @@ class Agent:
         for pid in ids:
             prof = patients[pid]
             age = prof.get("quasi", {}).get("age")
-            buttons.append((f"p:show:{pid}", f"{(prof.get('codes') or ['?'])[0]}" + (f" · {age}" if age else "")))
+            buttons.append((f"p:show:{pid}", f"{(prof.get('codes') or ['?'])[-1]}" + (f" · {age}" if age else "")))
         return [_msg(self.tr("pick_patient"), buttons)]
 
     def _show_patient(self, pid: str) -> list[dict]:

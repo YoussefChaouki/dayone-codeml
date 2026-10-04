@@ -140,10 +140,29 @@ def test_redigitisation_proposes_match_and_lets_midwife_choose(phone):
     msgs = phone.tap("m:pick:1")
     assert phone.store.get_record(rid2).state == S.DUPLICATE_SUSPECTED
     assert "104/74" in phone.text(msgs) and "109/74" in phone.text(msgs)
-    phone.tap("d:old")
+    msgs = phone.tap("d:old")
+    assert "code 2026-823-001" in phone.text(msgs)  # the spelling on file, not the variant typed
     rec2 = phone.store.get_record(rid2)
     assert rec2.state == S.REGISTERED and rec2.patient_id == patient_id
     assert rec2.payload["fields"]["pregnancy.visit.t1v2.bp"]["value"] == "104/74"
+
+
+
+def test_corrected_code_is_shown_after_updating_the_record(phone):
+    test_full_flow_offline_capture_review_match_sync(phone)
+    phone.tap("menu:new")
+    phone.photo(3, "medium")
+    phone.tap("cap:done")
+    phone.sync()
+    rid2 = phone.store.list_records()[-1].id
+    phone.tap(f"rev:start:{rid2}")
+    phone.tap("f:confirm")
+    phone.tap("f:blank")
+    phone.tap("rest:confirm")
+    phone.say("2026-823-011")  # the code was in fact miswritten the first time: one character off
+    phone.tap("m:pick:1")
+    msgs = phone.tap("d:new")
+    assert "code 2026-823-011" in phone.text(msgs)
 
 
 def test_unsure_match_parks_the_record(phone):

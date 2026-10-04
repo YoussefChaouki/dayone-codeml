@@ -93,3 +93,21 @@ def test_rules_never_crash_on_any_reading(page, readings):
         p = parse_value(spec, text)
         fields[spec.id] = FieldResult(field_id=spec.id, status=p.status, value=p.value, source="ocr", flags=p.flags)
     apply_rules(page, fields)  # must not raise
+
+
+def test_profile_shows_the_most_recently_confirmed_code():
+    from dayone.records import update_profile
+
+    profile = update_profile(None, "r1", {"code": "2026-63-007"}, 1.0)
+    profile = update_profile(profile, "r2", {"code": "2026-163-007"}, 2.0)  # code corrected on a re-digitisation
+    assert profile["codes"][-1] == "2026-163-007"
+    profile = update_profile(profile, "r3", {"code": "2026-63-007"}, 3.0)  # an older code confirmed again
+    assert profile["codes"] == ["2026-163-007", "2026-63-007"]  # no duplicate, latest last
+
+
+def test_ocr_variant_of_a_known_code_does_not_replace_it():
+    from dayone.records import update_profile
+
+    profile = update_profile(None, "r1", {"code": "2026-823-001"}, 1.0)
+    profile = update_profile(profile, "r2", {"code": "2O26-823-OO1"}, 2.0)
+    assert profile["codes"] == ["2026-823-001"]

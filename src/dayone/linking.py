@@ -106,7 +106,7 @@ def find_candidates(query: dict, patients: dict[str, dict], limit: int = 2) -> l
         if s >= PLAUSIBLE * 0.5:  # keep weak ones for display ranking, decision uses PLAUSIBLE
             quasi = profile.get("quasi", {})
             cands.append(Candidate(pid, round(s, 3), reasons, conflicts,
-                                   {"code": (profile.get("codes") or [""])[0], "age": quasi.get("age"),
+                                   {"code": (profile.get("codes") or [""])[-1], "age": quasi.get("age"),
                                     "edd": quasi.get("edd"), "gravidity": quasi.get("gravidity"),
                                     "parity": quasi.get("parity"), "visits": len(profile.get("records", []))}))
     cands.sort(key=lambda c: -c.score)

@@ -15,6 +15,7 @@ from typing import Any
 
 from dayone.extraction.normalize import VOCABULARIES
 from dayone.forms.layout import ALL_FIELDS, PAGE_FIELDS, PAGE_ORDER
+from dayone.linking import normalise_code
 from dayone.schema import FieldKind, FieldStatus, PageType, ValueType
 
 HUMAN_SOURCES = {"confirmed", "corrected", "manual"}
@@ -154,8 +155,12 @@ def update_profile(profile: dict | None, record_id: str, payload: dict, at: floa
     """Fold a validated record into the patient's longitudinal profile."""
     profile = profile or {"codes": [], "records": [], "fields": {}, "quasi": {}, "created_at": at}
     q = quasi_identifiers(payload)
-    if q.get("code") and q["code"] not in profile["codes"]:
-        profile["codes"].append(q["code"])
+    if q.get("code"):  # oldest first, most recently confirmed last (shown to the midwife)
+        # an OCR variant of a known code ("2O26" for "2026") keeps the spelling already on file
+        same = [c for c in profile["codes"] if normalise_code(c) == normalise_code(q["code"])]
+        for c in same:
+            profile["codes"].remove(c)
+        profile["codes"].append(same[0] if same else q["code"])
     for k, v in q.items():
         if v is not None and k != "code":
             profile["quasi"][k] = v
