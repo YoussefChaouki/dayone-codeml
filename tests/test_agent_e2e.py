@@ -276,3 +276,17 @@ def test_code_read_from_the_cover_is_always_confirmed(phone, server):
     phone.tap("m:code_edit")
     msgs = phone.say("2026-163-007")
     assert "2026-163-007" in phone.text(msgs) and "m:new" in phone.buttons(msgs)
+
+
+def test_longitudinal_record_can_be_consulted(phone):
+    test_full_flow_offline_capture_review_match_sync(phone)
+    rec = phone.store.list_records()[-1]
+    msgs = phone.tap("menu:records")
+    assert any(b.startswith("p:show:") for b in phone.buttons(msgs))
+    msgs = phone.say("dossier 2026-823-OO1")  # code typed with letters O: still found
+    text = phone.text(msgs)
+    assert "2026-823-001" in text and "26/04/2025" in text  # code, LMP
+    assert "104/74" in text and "58.8 kg" in text  # the validated visit values, not the misread 109/74
+    msgs = phone.tap(f"p:show:{rec.patient_id}")
+    assert "Dossier patiente" in phone.text(msgs) and "?" not in phone.text(msgs).split("\n")[1]
+    assert "Aucun dossier ne correspond" in phone.text(phone.say("dossier 1999-000-000"))

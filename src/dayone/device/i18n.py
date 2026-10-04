@@ -7,9 +7,13 @@ STRINGS: dict[str, dict[str, str]] = {
         "welcome": "Bonjour 👋 Je suis l'assistante *DayOne*. Je recopie le registre à partir de photos ; "
                    "c'est vous qui validez. Que voulez-vous faire ?",
         "btn_new": "📷 Nouvelle fiche", "btn_queue": "📋 File d'attente", "btn_manual": "✍️ Saisie manuelle",
+        "btn_records": "📁 Dossiers", "btn_show_record": "📁 Voir le dossier",
+        "no_patients": "Aucune patiente enregistrée sur ce téléphone pour l'instant.",
+        "pick_patient": "📁 Quel dossier ouvrir ? (vous pouvez aussi taper *dossier* suivi du code)",
+        "patient_not_found": "Aucun dossier ne correspond au code « {code} ».",
         "btn_review_pending": "🔎 Vérifier ({n})",
-        "help": "Commandes : *nouvelle* (photographier un registre), *file* (état des fiches), *saisie* (saisie "
-                "manuelle), *vérifier*, *langue en*, *menu*, *annuler*.",
+        "help": "Commandes : *nouvelle* (photographier un registre), *dossier* [code] (historique d'une patiente), "
+                "*file* (état des fiches), *saisie* (saisie manuelle), *vérifier*, *langue en*, *menu*, *annuler*.",
         "capture_start": "📷 Photographiez les pages du registre, *une page par photo*, à plat, sur un fond sombre. "
                          "Touchez *Terminer* quand toutes les pages sont envoyées.",
         "btn_done": "✅ Terminer", "btn_cancel": "Annuler",
@@ -104,9 +108,13 @@ STRINGS: dict[str, dict[str, str]] = {
         "welcome": "Hello 👋 I am the *DayOne* assistant. I copy the registry from photos; you validate. "
                    "What would you like to do?",
         "btn_new": "📷 New record", "btn_queue": "📋 Queue", "btn_manual": "✍️ Manual entry",
+        "btn_records": "📁 Patients", "btn_show_record": "📁 Open the record",
+        "no_patients": "No patient registered on this phone yet.",
+        "pick_patient": "📁 Which record? (you can also type *record* followed by the code)",
+        "patient_not_found": "No record matches the code \"{code}\".",
         "btn_review_pending": "🔎 Review ({n})",
-        "help": "Commands: *new* (photograph a registry), *queue* (record status), *manual* (manual entry), "
-                "*review*, *language fr*, *menu*, *cancel*.",
+        "help": "Commands: *new* (photograph a registry), *record* [code] (a patient's history), *queue* (record "
+                "status), *manual* (manual entry), *review*, *language fr*, *menu*, *cancel*.",
         "capture_start": "📷 Photograph the registry pages, *one page per photo*, flat, on a dark background. "
                          "Tap *Done* when all pages are sent.",
         "btn_done": "✅ Done", "btn_cancel": "Cancel",

@@ -9,6 +9,7 @@ doubtful fields, in bulk for confident ones.
 
 from __future__ import annotations
 
+import re
 from datetime import date
 from typing import Any
 
@@ -217,3 +218,95 @@ def vocabulary_examples(fid: str, lang: str = "fr") -> str:
 
 
 PAGE_INDEX = {pt.value: k for k, pt in enumerate(PAGE_ORDER)}
+
+
+# ---------------------------------------------------------------------------
+# Longitudinal record of a patient, as shown to the midwife ("dossier")
+# ---------------------------------------------------------------------------
+_SUMMARY = {
+    "fr": {"title": "📁 *Dossier patiente* — code {code}", "age": "{v} ans", "records": "{n} fiche(s) : {dates}",
+           "preg": "*Grossesse* : DDR {lmp} · DPA {edd}", "visits": "*Visites prénatales* (venue · AG · poids · TA) :",
+           "tests": "*Tests* : {items}", "delivery": "*Accouchement* : {items}", "pp": "*Post-partum {when}* : {items}",
+           "nb": "*Nouveau-né {when}* : {items}", "early": "précoce", "late": "tardif", "none": "—",
+           "hint": "Données recopiées du registre et validées par la sage-femme. Pas d'interprétation clinique."},
+    "en": {"title": "📁 *Patient record* — code {code}", "age": "{v} years", "records": "{n} record(s): {dates}",
+           "preg": "*Pregnancy*: LMP {lmp} · EDD {edd}", "visits": "*Antenatal visits* (date · GA · weight · BP):",
+           "tests": "*Tests*: {items}", "delivery": "*Delivery*: {items}", "pp": "*Postpartum {when}*: {items}",
+           "nb": "*Newborn {when}*: {items}", "early": "early", "late": "late", "none": "—",
+           "hint": "Copied from the registry and validated by the midwife. No clinical interpretation."},
+}
+
+
+def _known(profile: dict, fid: str):
+    e = profile.get("fields", {}).get(fid)
+    return e.get("value") if e and e.get("status") == FieldStatus.KNOWN.value else None
+
+
+def _items(profile: dict, fids: list[str], lang: str, with_label: bool = True) -> str:
+    parts = []
+    for fid in fids:
+        v = _known(profile, fid)
+        if v is None:
+            continue
+        val = display_value(fid, v, lang)
+        parts.append(f"{label(fid, lang)} {val}" if with_label else val)
+    return " · ".join(parts)
+
+
+def profile_summary(profile: dict, record_dates: list[str], lang: str = "fr") -> str:
+    """Readable longitudinal summary of a patient profile (no name, no identifier)."""
+    from dayone.forms.layout import VISIT_COLS
+
+    t = _SUMMARY[lang]
+    q = profile.get("quasi", {})
+    dash = t["none"]
+    ident = []
+    if q.get("age") is not None:
+        ident.append(t["age"].format(v=q["age"]))
+    if q.get("gravidity") is not None or q.get("parity") is not None:
+        ident.append(f"G{q.get('gravidity', '?')} P{q.get('parity', '?')}")
+    ident.append(t["records"].format(n=len(record_dates), dates=", ".join(record_dates) or dash))
+    lines = [t["title"].format(code=", ".join(profile.get("codes", [])) or "?"), " · ".join(ident)]
+    lmp, edd = _known(profile, "pregnancy.lmp_date"), _known(profile, "pregnancy.edd")
+    if lmp or edd:
+        lines.append(t["preg"].format(lmp=display_value("pregnancy.lmp_date", lmp, lang) if lmp else dash,
+                                      edd=display_value("pregnancy.edd", edd, lang) if edd else dash))
+    visits = []
+    for col, fr, en in VISIT_COLS:
+        base = f"pregnancy.visit.{col}."
+        cells = [_known(profile, base + r) for r in ("visit_date", "gest_age", "weight", "bp")]
+        if not any(c is not None for c in cells):
+            continue
+        shown = [display_value(base + r, c, lang) if c is not None else dash
+                 for r, c in zip(("visit_date", "gest_age", "weight", "bp"), cells, strict=True)]
+        visits.append(f"• {fr if lang == 'fr' else en} — " + " · ".join(shown))
+    if visits:
+        lines += [t["visits"], *visits]
+    tests = []
+    for row in ("hiv", "syphilis", "hbsag", "hemoglobin"):
+        values = [(col, _known(profile, f"pregnancy.visit.{col}.{row}")) for col, _, _ in VISIT_COLS]
+        values = [(c, v) for c, v in values if v is not None]
+        if values:
+            fid = f"pregnancy.visit.{values[-1][0]}.{row}"
+            name = re.sub(r"\s*\(.*\)", "", label(fid, lang).split(" — ")[0])  # "Hémoglobine (g/dL)" -> "Hémoglobine"
+            tests.append(f"{name} {display_value(fid, values[-1][1], lang)}")
+    if tests:
+        lines.append(t["tests"].format(items=" · ".join(tests)))
+    mode = next((label(f, lang) for f in ("delivery.mode.vaginal", "delivery.mode.instrumental",
+                                           "delivery.mode.cesarean_planned", "delivery.mode.cesarean_emergency")
+                 if _known(profile, f) is True), None)
+    delivery = _items(profile, ["delivery.date"], lang, with_label=False)
+    extra = _items(profile, ["delivery.newborn.sex", "delivery.newborn.weight", "delivery.newborn.gest_age"], lang)
+    if delivery or mode or extra:
+        lines.append(t["delivery"].format(items=" · ".join(x for x in (delivery, mode, extra) if x)))
+    for when, key in (("early", "pp_early"), ("late", "pp_late")):
+        mother = _items(profile, [f"{key}_mother.consultation_date", f"{key}_mother.bp", f"{key}_mother.temperature",
+                                  f"{key}_mother.weight"], lang)
+        if mother:
+            lines.append(t["pp"].format(when=t[when], items=mother))
+        baby = _items(profile, [f"{key}_newborn.consultation_date", f"{key}_newborn.weight",
+                                f"{key}_newborn.temperature"], lang)
+        if baby:
+            lines.append(t["nb"].format(when=t[when], items=baby))
+    lines.append(f"_{t['hint']}_")
+    return "\n".join(lines)

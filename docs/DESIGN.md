@@ -154,6 +154,8 @@ and its behaviour is testable. Principles:
   registered shows the field-by-field differences and lets the midwife choose.
 * Buttons follow WhatsApp limits (≤ 3 reply buttons, otherwise a list), so the same
   engine drives the real WhatsApp channel.
+* **Continuous record**: *📁 Dossiers* or *dossier <code>* shows a patient's longitudinal
+  record built from every validated visit (no name, no identifier; no clinical interpretation).
 * French by default, English with *language en*; values accepted in FR/EN/AR.
 
 ## 6. Offline-first

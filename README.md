@@ -42,7 +42,8 @@ Acceptance threshold τ = 0.50, chosen on the calibration patients 1-5 (it is th
 | 3. Conversational review (confirm / edit / retake, follow-up questions, manual entry) | deterministic agent, FR/EN — [`device/agent.py`](src/dayone/device/agent.py) |
 | 4. Offline mode | encrypted store, persistent outbox, idempotent sync, crash recovery — [`device/store.py`](src/dayone/device/store.py), [`device/sync.py`](src/dayone/device/sync.py) |
 | 5. Record lifecycle | explicit state machine with history — [docs/LIFECYCLE.md](docs/LIFECYCLE.md) |
-| 6. Patient linking | code + OCR-confusion tolerance + non-identifying attributes, never auto-create — [`linking.py`](src/dayone/linking.py) |
+| 6. Patient linking | code (always confirmed) + OCR-confusion tolerance + non-identifying attributes, never auto-create — [`linking.py`](src/dayone/linking.py) |
+| Continuous profile | *📁 Dossiers* / *dossier <code>*: the patient's longitudinal record (visits with date, GA, weight, BP; tests; delivery; postpartum) — [`records.py`](src/dayone/records.py) |
 | 7. Multi-page sessions & re-digitisation | one record per registry, field-by-field diff — [`records.py`](src/dayone/records.py) |
 | 8. Original image kept | redacted photo, encrypted, linked to record id, capture date, midwife id, processing status; role-based access with audit — [`server/app.py`](src/dayone/server/app.py) |
 | Bonus | quality check before accepting a capture, Arabic/multilingual robustness (evaluated), anonymised dashboard, FR/EN interface, WhatsApp Cloud API adapter ([docs/WHATSAPP.md](docs/WHATSAPP.md)) |

@@ -44,6 +44,7 @@ from dayone.records import (
     is_validated,
     label,
     pages_already_in_profile,
+    profile_summary,
     quasi_identifiers,
     review_queue,
     update_profile,
@@ -180,6 +181,9 @@ class Agent:
             return self._cancel()
         if low in ("file", "queue", "état", "etat", "status"):
             return self._queue()
+        if mode == "idle" and low.split(" ")[0] in ("dossier", "dossiers", "patiente", "patientes", "record",
+                                                     "records", "patient"):
+            return self._dossier(text.split(" ", 1)[1].strip() if " " in text.strip() else "")
         if mode == "correct":
             return self._on_correction(text)
         if mode == "manual":
@@ -239,6 +243,10 @@ class Agent:
             return self._manual_start(None)
         if bid == "menu:review":
             return self._review_next_record()
+        if bid == "menu:records":
+            return self._dossier("")
+        if head == "p" and arg.startswith("show:"):
+            return self._show_patient(arg.split(":", 1)[1])
         if bid == "cap:done":
             return self._finish_capture()
         if bid == "cap:cancel":
@@ -281,8 +289,8 @@ class Agent:
     def _menu(self, greet: bool = True) -> list[dict]:
         self.state["mode"] = "idle"
         self._pending_image = None
-        buttons = [("menu:new", self.tr("btn_new")), ("menu:queue", self.tr("btn_queue")),
-                   ("menu:manual", self.tr("btn_manual"))]
+        buttons = [("menu:new", self.tr("btn_new")), ("menu:records", self.tr("btn_records")),
+                   ("menu:queue", self.tr("btn_queue")), ("menu:manual", self.tr("btn_manual"))]
         n = len(self._records_to_review())
         if n:
             buttons.insert(0, ("menu:review", self.tr("btn_review_pending", n=n)))
@@ -781,7 +789,42 @@ class Agent:
         self.kick_sync()
         sync = self.tr("sync_now") if self.is_online() else self.tr("sync_pending")
         code = (profile.get("codes") or ["?"])[0]
-        return [_msg(self.tr("registered", code=code, sync=sync))] + self._menu(greet=False)
+        return [_msg(self.tr("registered", code=code, sync=sync), [(f"p:show:{pid}", self.tr("btn_show_record"))])] \
+            + self._menu(greet=False)
+
+    # ------------------------------------------------------------------ longitudinal record
+    def _dossier(self, query: str) -> list[dict]:
+        """List the midwife's patients, or find one by the code written on the registry."""
+        patients = self.store.list_patients()
+        if not patients:
+            return [_msg(self.tr("no_patients"))] + self._menu(greet=False)
+        if query:
+            cands = [c for c in find_candidates({"code": query}, patients, limit=5) if c.score >= 0.25]
+            if len(cands) == 1:
+                return self._show_patient(cands[0].patient_id)
+            if not cands:
+                return [_msg(self.tr("patient_not_found", code=query))] + self._dossier("")
+            ids = [c.patient_id for c in cands]
+        else:
+            ids = sorted(patients, key=lambda pid: -patients[pid].get("updated_at", 0))[:10]
+        buttons = []
+        for pid in ids:
+            prof = patients[pid]
+            age = prof.get("quasi", {}).get("age")
+            buttons.append((f"p:show:{pid}", f"{(prof.get('codes') or ['?'])[0]}" + (f" · {age}" if age else "")))
+        return [_msg(self.tr("pick_patient"), buttons)]
+
+    def _show_patient(self, pid: str) -> list[dict]:
+        profile = self.store.get_patient(pid)
+        if profile is None:
+            return [_msg(self.tr("stale_button"))] + self._menu(greet=False)
+        dates = []
+        for rid in profile.get("records", []):
+            try:
+                dates.append(self._date(self.store.get_record(rid).created_at).split(" ")[0])
+            except KeyError:  # record synced from another phone: not on this device
+                continue
+        return [_msg(profile_summary(profile, dates, self.lang))] + self._menu(greet=False)
 
     # ------------------------------------------------------------------ manual entry
     def _manual_start(self, rid: str | None) -> list[dict]:
