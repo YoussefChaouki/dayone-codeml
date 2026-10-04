@@ -14,7 +14,9 @@ and does its confidence tell the midwife *which* fields to check?
   is extracted automatically from the PDF itself: handwritten values are text set in
   handwriting fonts, tick marks are vector strokes in a pen colour
   (`src/dayone/evaluation/groundtruth.py`). 6,010 fields, 2,032 written fields (of which
-  129 dashes), 468 ticked boxes. Every handwritten string is assigned to a field of the
+  129 dashes and 93 whose only characters are glyphs missing from the generator's font — invisible
+  on the image, hence scored as blank), 468 ticked boxes. Each patient is written in one of five
+  handwriting fonts, and the fonts are paired across splits (1↔6, 2↔7, 3↔8, 4↔9, 5↔10). Every handwritten string is assigned to a field of the
   layout, except the direct identifiers (name, ID number, phone, address, husband) and
   professions, which are deliberately not part of the schema.
 * **Duplicates**: the 124 provided PNG files hold 80 distinct pages; 44 are byte-identical
@@ -116,7 +118,9 @@ All entries below were written **before** any metric of the final run was comput
   printed the reading errors of one test-split page (page 43, patient 6, clean); (2) page
   classification / registration statistics were computed on all 80 pages (see §6);
   (3) after adding the repairs, ground truth was re-generated for all pages to check that it
-  did not change (it did not) — no prediction or metric was computed on the test split.
+  did not change (it did not); (4) the discarded run `main` had produced 52 predictions of
+  test-split captures (all 5 test patients) before it was stopped. No metric was computed on
+  them and they were not inspected, but they existed on disk (found by the results audit).
 * 2026-10-03 — after run `final` started (commit in `_meta.json`), two extraction files
   changed for the phone/server only, with no effect on what the evaluation measures:
   `register.py` accepts the sibling page when a page type is *expected* (the evaluation never
@@ -137,3 +141,17 @@ All entries below were written **before** any metric of the final run was comput
 * **Metrics.** Handwritten-field accuracy and silent-error rate, with 95 % page-bootstrap
   intervals, compared with the same pages in their original fonts at `medium` level.
 * **Reporting rule.** Reported in `docs/RESULTS.md` whatever the outcome.
+
+## 9. Post-hoc findings of the results audit (2026-10-03, after the final run)
+
+Recorded after the final numbers, nothing re-tuned:
+* **Undeclared grid floor.** `make calibrate` searched τ in [0.50, 0.99], so τ = 0.50 is the
+  floor of the grid, not "the smallest τ" of rule 2. The report shows the τ the rule gives
+  without the floor and its test silent-error rate.
+* **Statistical power.** 40 test pages from 5 patients: the report gives 95 % page-bootstrap
+  intervals. The silent-error interval crosses 2 %, so the target is not demonstrated.
+* **Mixture.** The headline mixes unaltered renders, mild and medium simulated photos; the
+  report gives medium-only numbers next to it.
+* **Script vs page mode.** "Arabic" pages contain Western digits and Latin text; the report
+  breaks results down by the script actually written.
+* The ECE is dominated by easy captures; the report adds strata and trivial baselines.

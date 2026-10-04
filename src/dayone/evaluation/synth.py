@@ -153,7 +153,7 @@ def _top_offset(font: str, size: float, css: str, archive: pymupdf.Archive, rtl:
 
 
 def render_page(src_pdf: pymupdf.Document, page_index: int, gt_page: dict, mode: str, seed: int,
-                dpi: int = 200) -> tuple[np.ndarray, dict, dict]:
+                dpi: int = 200, latin_fonts: list[str] | None = None) -> tuple[np.ndarray, dict, dict]:
     """Rewrite one specimen page in ``mode`` (fr | en | ar | mixed); return BGR image, gt fields, languages."""
     import cv2
 
@@ -171,7 +171,7 @@ def render_page(src_pdf: pymupdf.Document, page_index: int, gt_page: dict, mode:
     page.apply_redactions(images=pymupdf.PDF_REDACT_IMAGE_NONE, graphics=pymupdf.PDF_REDACT_LINE_ART_NONE)
     color = f"#{ink if ink is not None else 0x1F2A8C:06x}"
     archive = pymupdf.Archive(str(FONT_DIR))
-    gt_fields, langs = {}, {}
+    gt_fields, langs, dropped = {}, {}, []
     for fid, gt in gt_page["fields"].items():
         spec = ALL_FIELDS[fid]
         if spec.kind == FieldKind.CHECKBOX:
@@ -183,7 +183,7 @@ def render_page(src_pdf: pymupdf.Document, page_index: int, gt_page: dict, mode:
             gt_fields[fid] = gt
             continue
         is_ar = bool(re.search(r"[؀-ۿ]", text))
-        font = rng.choice(ARABIC_FONTS if is_ar else LATIN_FONTS)
+        font = rng.choice(ARABIC_FONTS if is_ar else (latin_fonts or LATIN_FONTS))
         size = rng.uniform(10.5, 13.0) if not is_ar else rng.uniform(11.0, 13.5)
         css = (f"@font-face {{font-family: hw; src: url({font});}} "
                f"* {{font-family: hw; font-size: {size:.1f}px; color: {color}; margin: 0; line-height: 1.1;}}")
@@ -196,13 +196,16 @@ def render_page(src_pdf: pymupdf.Document, page_index: int, gt_page: dict, mode:
             x0, y0, x1, y1 = spec.region
             rect = pymupdf.Rect(x0 + 2, y0 - dy, x1 - 1, y1 + 2)
         spare = page.insert_htmlbox(rect, html, css=css, archive=archive, scale_low=0.6)
-        if spare[0] < 0:  # did not fit: keep the original value rather than a truncated one
+        if spare[0] < 0:  # did not fit: the original ink is already erased, so the field leaves the ground truth
+            dropped.append(fid)
             continue
         parsed = parse_value(spec, text)
         gt_fields[fid] = {"status": parsed.status.value, "value": parsed.value, "raw": text}
         langs[fid] = "ar" if is_ar else lang if lang != "ar" else "ar"
     pix = page.get_pixmap(dpi=dpi)
     img = np.frombuffer(pix.samples, dtype=np.uint8).reshape(pix.height, pix.width, pix.n)[:, :, :3]
+    if dropped:
+        langs["_dropped"] = dropped
     return cv2.cvtColor(img, cv2.COLOR_RGB2BGR), gt_fields, langs
 
 

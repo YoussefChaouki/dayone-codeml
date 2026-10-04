@@ -27,4 +27,4 @@ Open http://127.0.0.1:8000. Left: the midwife's WhatsApp-style chat. Right: the
 | 12 | Type `language en`, or `saisie` for manual entry | Bilingual interface; full manual entry without AI |
 
 Timing: on an M4 Pro, a simple page is read in 10-25 s, the dense visits table in
-1-2 min (≈ 280 cells). Readings are cached by crop, so replaying a demo is faster.
+1-3 min (≈ 280 cells). The server keeps no OCR cache (raw readings would sit in clear on disk), so a replay is read again.

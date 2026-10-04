@@ -2,7 +2,7 @@
 PY := uv run python
 # evaluation run (see docs/EVALUATION.md §7)
 RUN ?= final
-.PHONY: install models fonts prepare dataset eval calibrate report test lint demo demo-offline clean-demo
+.PHONY: install models fonts prepare dataset eval calibrate unseen report test lint demo demo-offline clean-demo
 
 install:            ## Python environment (uv)
 	uv sync
@@ -29,6 +29,12 @@ eval:               ## run the pipeline on every capture (resumable; ~3 h on an 
 
 calibrate:          ## fit the confidence model and the acceptance threshold (calibration split)
 	$(PY) -m dayone.evaluation.report calibrate --run $(RUN)
+
+unseen:             ## supplementary: test pages re-written in 2 never-seen handwriting fonts (~30 min)
+	curl -sfL -o artifacts/fonts/IndieFlower-Regular.ttf https://github.com/google/fonts/raw/main/ofl/indieflower/IndieFlower-Regular.ttf
+	curl -sfL -o artifacts/fonts/HomemadeApple-Regular.ttf https://github.com/google/fonts/raw/main/apache/homemadeapple/HomemadeApple-Regular.ttf
+	$(PY) -m dayone.evaluation.unseen_fonts build
+	$(PY) -m dayone.evaluation.unseen_fonts run
 
 report:             ## metrics on the test split -> docs/RESULTS.md
 	$(PY) -m dayone.evaluation.report report --run $(RUN)

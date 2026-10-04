@@ -44,6 +44,8 @@ class FieldOutcome:
     value_type: str
     split: str
     source: str
+    page: int = 0  # page number, the unit of the bootstrap
+    script: str = "latin"  # what is written: latin | arabic_script | eastern_digits
 
 
 def compare(item: dict, pred: PageExtraction) -> list[FieldOutcome]:
@@ -74,8 +76,51 @@ def compare(item: dict, pred: PageExtraction) -> list[FieldOutcome]:
             and "confirm_special" not in p.flags,
             confidence=conf, level=item["level"],
             language=item["languages"].get(fid, "fr") if item["kind"] == "synth" else "fr",
-            page_type=item["page_type"], value_type=spec.value_type.value, split=item["split"], source=source))
+            page_type=item["page_type"], value_type=spec.value_type.value, split=item["split"], source=source,
+            page=item["page_number"], script=script_of(gt.get("raw") or "")))
     return out
+
+
+_ARABIC_LETTERS = re.compile(r"[\u0600-\u065F\u066A-\u06EF\u06FA-\u06FF]")
+_EASTERN_DIGITS = re.compile(r"[\u0660-\u0669\u06F0-\u06F9]")
+
+
+def script_of(raw: str) -> str:
+    if _ARABIC_LETTERS.search(raw):
+        return "arabic_script"
+    if _EASTERN_DIGITS.search(raw):
+        return "eastern_digits"
+    return "latin"
+
+
+def bootstrap_ci(outcomes: list[FieldOutcome], stat, n: int = 2000, seed: int = 0,
+                 level: float = 0.95) -> tuple[float, float] | None:
+    """Percentile interval of ``stat(outcomes)`` resampling whole pages (fields of a page are correlated)."""
+    pages: dict[int, list[FieldOutcome]] = defaultdict(list)
+    for o in outcomes:
+        pages[o.page].append(o)
+    keys = list(pages)
+    if len(keys) < 2:
+        return None
+    rng = np.random.default_rng(seed)
+    vals = []
+    for _ in range(n):
+        sample = [o for k in rng.choice(keys, size=len(keys), replace=True) for o in pages[k]]
+        v = stat(sample)
+        if v is not None:
+            vals.append(v)
+    if not vals:
+        return None
+    a = (1 - level) / 2
+    return float(np.quantile(vals, a)), float(np.quantile(vals, 1 - a))
+
+
+def accuracy_stat(outcomes: list[FieldOutcome]) -> float | None:
+    return rate([o.correct for o in handwritten(outcomes)])
+
+
+def silent_stat(outcomes: list[FieldOutcome]) -> float | None:
+    return rate([not o.correct for o in handwritten(outcomes) if o.accepted])
 
 
 def rate(xs: list[bool]) -> float | None:
@@ -128,7 +173,8 @@ def summarise(outcomes: list[FieldOutcome]) -> dict:
         "silent_error_rate": rate([not o.correct for o in accepted]),
         "all_fields_silent_error_rate": rate([not o.correct for o in outcomes if o.accepted]),
         "all_fields_review_share": rate([not o.accepted for o in outcomes]),
-        "blank": {"n": len(blank), "accuracy": rate([o.correct for o in blank])},
+        "blank": {"n": len(blank), "accuracy": rate([o.correct for o in blank]),
+                  "errors": sum(not o.correct for o in blank)},
         "dash": {"n": len(dash), "accuracy": rate([o.correct for o in dash])},
         "checkbox": {"n": len(boxes), "accuracy": rate([o.correct for o in boxes]),
                      "silent_error_rate": rate([not o.correct for o in boxes if o.accepted])},
