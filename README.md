@@ -1,5 +1,9 @@
 # DayOne — a midwife, a phone and an AI
 
+▶️ **[Demo video (3 min 40, real WhatsApp)](https://github.com/YoussefChaouki/dayone-codeml/releases/download/v1.0/DayOne-demo-x1.25.mp4)**
+— offline capture with identifiers masked, connectivity back, AI reading with an uncertain field
+reviewed, patient code confirmed, and the patient-match decision on a second visit.
+
 **An offline-first, WhatsApp-style agent that turns photos of the paper maternal registry
 into a structured, verified and longitudinal digital record — 100 % local AI, nothing sent
 to a third party.**

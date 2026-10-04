@@ -35,8 +35,8 @@ def test_unrelated_code_and_data_is_not_plausible():
 
 
 def test_scrub_text_masks_phone_and_national_id():
-    assert scrub_text("rappeler au 06 00 76 13 48") == f"rappeler au {MASK}"
-    assert MASK in scrub_text("CIN CB609814 vue")
+    assert scrub_text("rappeler au 06 12 34 56 78") == f"rappeler au {MASK}"
+    assert MASK in scrub_text("CIN AB123456 vue")
 
 
 def test_redaction_blacks_out_identifier_zones():
