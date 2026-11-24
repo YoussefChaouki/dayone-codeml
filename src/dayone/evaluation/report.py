@@ -186,7 +186,7 @@ def report(eval_dir: Path, run: str, model_path: Path, out_md: Path) -> dict:
     figs = _figures(test, res["risk_coverage"], out_md.parent / "figures")
     (eval_dir / f"report_{run}.json").write_text(json.dumps(res, indent=1))
     out_md.write_text(render_markdown(res, figs))
-    update_readme(res, Path("README.md"))
+    update_readme(res, Path("README.fr.md"))  # the French README carries the generated block
     return res
 
 

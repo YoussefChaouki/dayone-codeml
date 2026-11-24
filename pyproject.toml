@@ -1,7 +1,7 @@
 [project]
 name = "dayone"
 version = "0.1.0"
-description = "Add your description here"
+description = "Offline-first conversational agent that turns photos of a paper maternal registry into a verified digital record, with local AI only"
 authors = [
     { name = "Youssef", email = "youschaouki@gmail.com" }
 ]
